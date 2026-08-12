@@ -36,8 +36,9 @@ jobs:
           mkdir -p app/src/main/jniLibs
 
           curl -fL --retry 3 \
-            'https://raw.githubusercontent.com/k2-fsa/sherpa-onnx/v1.13.4/android/SherpaOnnxTts/app/src/main/java/com/k2fsa/sherpa/onnx/Tts.kt' \
+            'https://raw.githubusercontent.com/k2-fsa/sherpa-onnx/v1.13.4/sherpa-onnx/kotlin-api/Tts.kt' \
             -o app/src/main/java/com/k2fsa/sherpa/onnx/Tts.kt
+          grep -q '^package com.k2fsa.sherpa.onnx' app/src/main/java/com/k2fsa/sherpa/onnx/Tts.kt
 
           curl -fL --retry 3 \
             'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fa_IR-amir-medium.tar.bz2' \
