@@ -1,0 +1,34 @@
+name: Publish Takht APK Artifact
+
+on:
+  push:
+    branches: [takhtbeheshti-apk-build]
+    paths-ignore:
+      - 'build-info.txt'
+      - 'Madrasah-Mohammadia-Takht.apk'
+  workflow_dispatch:
+
+jobs:
+  publish-apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify APK
+        run: test -s 'Madrasah-Mohammadia-Takht.apk'
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Madrasah-Mohammadia-Takht-APK
+          path: Madrasah-Mohammadia-Takht.apk
+          if-no-files-found: error
+      - name: Save workflow run id
+        run: echo "$GITHUB_RUN_ID" > build-info.txt
+      - name: Commit build info
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add build-info.txt
+          git commit -m 'Record APK artifact workflow run'
+          git push origin HEAD:takhtbeheshti-apk-build
