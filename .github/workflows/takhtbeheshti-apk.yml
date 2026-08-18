@@ -3,13 +3,15 @@ name: Build Takht Beheshti APK
 on:
   push:
     branches: [takhtbeheshti-apk-build]
+    paths-ignore:
+      - 'Madrasah-Mohammadia-Takht.apk'
   workflow_dispatch:
 
 jobs:
   build-apk:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -113,11 +115,9 @@ jobs:
           import android.os.Build;
           import android.os.Bundle;
           import android.os.Environment;
-          import android.provider.Settings;
           import android.view.Gravity;
           import android.view.View;
           import android.webkit.CookieManager;
-          import android.webkit.DownloadListener;
           import android.webkit.URLUtil;
           import android.webkit.ValueCallback;
           import android.webkit.WebChromeClient;
@@ -159,13 +159,11 @@ jobs:
                   FrameLayout root = new FrameLayout(this);
                   webView = new WebView(this);
                   root.addView(webView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-
                   progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
                   progress.setMax(100);
                   FrameLayout.LayoutParams pp = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, 6);
                   pp.gravity = Gravity.TOP;
                   root.addView(progress, pp);
-
                   offline = new LinearLayout(this);
                   offline.setOrientation(LinearLayout.VERTICAL);
                   offline.setGravity(Gravity.CENTER);
@@ -207,7 +205,6 @@ jobs:
                   s.setUserAgentString(s.getUserAgentString() + " TakhtBeheshtiAndroid/1.0");
                   CookieManager.getInstance().setAcceptCookie(true);
                   CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
-
                   webView.setWebChromeClient(new WebChromeClient() {
                       @Override public void onProgressChanged(WebView view, int newProgress) {
                           progress.setProgress(newProgress);
@@ -224,16 +221,12 @@ jobs:
                           return true;
                       }
                   });
-
                   webView.setWebViewClient(new WebViewClient() {
                       @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) { return route(request.getUrl()); }
                       @Override public boolean shouldOverrideUrlLoading(WebView view, String url) { return route(Uri.parse(url)); }
-                      @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                          if (request.isForMainFrame()) offline.setVisibility(View.VISIBLE);
-                      }
+                      @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) { if (request.isForMainFrame()) offline.setVisibility(View.VISIBLE); }
                       @Override public void onPageFinished(WebView view, String url) { if (isOnline()) offline.setVisibility(View.GONE); }
                   });
-
                   webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> download(url, userAgent, contentDisposition, mimeType));
               }
 
@@ -299,10 +292,7 @@ jobs:
                   if (requestCode == STORAGE_PERMISSION && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) startDownload();
               }
 
-              @Override public void onBackPressed() {
-                  if (webView.canGoBack()) webView.goBack(); else super.onBackPressed();
-              }
-
+              @Override public void onBackPressed() { if (webView.canGoBack()) webView.goBack(); else super.onBackPressed(); }
               @Override protected void onSaveInstanceState(Bundle outState) { webView.saveState(outState); super.onSaveInstanceState(outState); }
           }
           EOF
@@ -312,9 +302,11 @@ jobs:
         run: gradle --no-daemon assembleDebug
       - name: Rename APK
         run: cp takhtapp/app/build/outputs/apk/debug/app-debug.apk 'Madrasah-Mohammadia-Takht.apk'
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Madrasah-Mohammadia-Takht-APK
-          path: Madrasah-Mohammadia-Takht.apk
-          if-no-files-found: error
+      - name: Commit APK to build branch
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -f 'Madrasah-Mohammadia-Takht.apk'
+          git commit -m 'Generated installable Takht Beheshti APK'
+          git push origin HEAD:takhtbeheshti-apk-build
