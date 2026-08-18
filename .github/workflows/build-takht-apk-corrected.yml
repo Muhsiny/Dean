@@ -44,3 +44,4 @@ jobs:
           git add -f Madrasah-Mohammadia-Takht-v2.apk
           git commit -m 'Publish corrected Takht APK v1.0.1'
           git push origin main
+# rebuild-trigger-2
