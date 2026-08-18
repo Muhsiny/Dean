@@ -1,0 +1,320 @@
+name: Build Takht Beheshti APK
+
+on:
+  push:
+    branches: [takhtbeheshti-apk-build]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.1'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Create native Android project
+        shell: bash
+        run: |
+          mkdir -p takhtapp/app/src/main/java/af/takhtbeheshti/mohammadia
+          mkdir -p takhtapp/app/src/main/res/values takhtapp/app/src/main/res/drawable
+          cat > takhtapp/settings.gradle <<'EOF'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
+          rootProject.name = 'TakhtBeheshti'
+          include ':app'
+          EOF
+          cat > takhtapp/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.7.3' apply false
+          }
+          EOF
+          cat > takhtapp/app/build.gradle <<'EOF'
+          plugins { id 'com.android.application' }
+          android {
+              namespace 'af.takhtbeheshti.mohammadia'
+              compileSdk 35
+              defaultConfig {
+                  applicationId 'af.takhtbeheshti.mohammadia'
+                  minSdk 24
+                  targetSdk 35
+                  versionCode 1
+                  versionName '1.0.0'
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          EOF
+          cat > takhtapp/app/src/main/res/values/strings.xml <<'EOF'
+          <resources>
+              <string name="app_name">مدرسه علمیه محمدیه تخت</string>
+          </resources>
+          EOF
+          cat > takhtapp/app/src/main/res/values/styles.xml <<'EOF'
+          <resources>
+              <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:windowActionModeOverlay">true</item>
+                  <item name="android:navigationBarColor">#075F3B</item>
+                  <item name="android:statusBarColor">#075F3B</item>
+                  <item name="android:colorAccent">#C8A34F</item>
+              </style>
+          </resources>
+          EOF
+          cat > takhtapp/app/src/main/res/drawable/school_logo.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+              <path android:fillColor="#FFFDF7" android:pathData="M0,0h108v108h-108z"/>
+              <path android:fillColor="#C8A34F" android:pathData="M54,8 C31,8 13,27 13,50 L13,96 L23,96 L23,50 C23,33 37,19 54,19 C71,19 85,33 85,50 L85,96 L95,96 L95,50 C95,27 77,8 54,8z"/>
+              <path android:fillColor="#075F3B" android:pathData="M27,66 C31,49 42,39 54,30 C66,39 77,49 81,66 L81,82 L27,82z"/>
+              <path android:fillColor="#FFFDF7" android:pathData="M35,60h5v18h-5zM45,51h5v27h-5zM58,51h5v27h-5zM68,60h5v18h-5z"/>
+          </vector>
+          EOF
+          cat > takhtapp/app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+              <application android:allowBackup="true" android:icon="@drawable/school_logo" android:label="@string/app_name" android:roundIcon="@drawable/school_logo" android:supportsRtl="true" android:theme="@style/AppTheme" android:usesCleartextTraffic="false">
+                  <activity android:name=".MainActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+          cat > takhtapp/app/src/main/java/af/takhtbeheshti/mohammadia/MainActivity.java <<'EOF'
+          package af.takhtbeheshti.mohammadia;
+
+          import android.Manifest;
+          import android.app.Activity;
+          import android.app.DownloadManager;
+          import android.content.ActivityNotFoundException;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.content.pm.PackageManager;
+          import android.graphics.Color;
+          import android.net.ConnectivityManager;
+          import android.net.Network;
+          import android.net.NetworkCapabilities;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.os.Environment;
+          import android.provider.Settings;
+          import android.view.Gravity;
+          import android.view.View;
+          import android.webkit.CookieManager;
+          import android.webkit.DownloadListener;
+          import android.webkit.URLUtil;
+          import android.webkit.ValueCallback;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebResourceError;
+          import android.webkit.WebResourceRequest;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import android.widget.Button;
+          import android.widget.FrameLayout;
+          import android.widget.LinearLayout;
+          import android.widget.ProgressBar;
+          import android.widget.TextView;
+          import android.widget.Toast;
+
+          public class MainActivity extends Activity {
+              private static final String HOME = "https://app-61p2x9.v2.appdeploy.ai/?app=takhtbeheshti#takhtbeheshti/home";
+              private static final String SITE_HOST = "app-61p2x9.v2.appdeploy.ai";
+              private static final int FILE_CHOOSER = 501;
+              private static final int STORAGE_PERMISSION = 502;
+              private WebView webView;
+              private ProgressBar progress;
+              private LinearLayout offline;
+              private ValueCallback<Uri[]> fileCallback;
+              private String pendingDownloadUrl;
+              private String pendingUserAgent;
+              private String pendingContentDisposition;
+              private String pendingMimeType;
+
+              @Override public void onCreate(Bundle state) {
+                  super.onCreate(state);
+                  getWindow().setStatusBarColor(Color.rgb(7,95,59));
+                  buildUi();
+                  configureWebView();
+                  if (state != null) webView.restoreState(state); else webView.loadUrl(HOME);
+              }
+
+              private void buildUi() {
+                  FrameLayout root = new FrameLayout(this);
+                  webView = new WebView(this);
+                  root.addView(webView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+                  progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+                  progress.setMax(100);
+                  FrameLayout.LayoutParams pp = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, 6);
+                  pp.gravity = Gravity.TOP;
+                  root.addView(progress, pp);
+
+                  offline = new LinearLayout(this);
+                  offline.setOrientation(LinearLayout.VERTICAL);
+                  offline.setGravity(Gravity.CENTER);
+                  offline.setPadding(48,48,48,48);
+                  offline.setBackgroundColor(Color.rgb(247,241,229));
+                  TextView title = new TextView(this);
+                  title.setText("اتصال اینترنت برقرار نیست");
+                  title.setTextSize(20);
+                  title.setTextColor(Color.rgb(32,42,68));
+                  title.setGravity(Gravity.CENTER);
+                  TextView text = new TextView(this);
+                  text.setText("برای باز کردن مدرسه، اینترنت را بررسی کنید و دوباره تلاش نمایید.");
+                  text.setTextSize(14);
+                  text.setTextColor(Color.DKGRAY);
+                  text.setGravity(Gravity.CENTER);
+                  text.setPadding(0,18,0,22);
+                  Button retry = new Button(this);
+                  retry.setText("تلاش دوباره");
+                  retry.setOnClickListener(v -> { offline.setVisibility(View.GONE); webView.reload(); });
+                  offline.addView(title);
+                  offline.addView(text);
+                  offline.addView(retry);
+                  offline.setVisibility(View.GONE);
+                  root.addView(offline, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+                  setContentView(root);
+              }
+
+              private void configureWebView() {
+                  WebSettings s = webView.getSettings();
+                  s.setJavaScriptEnabled(true);
+                  s.setDomStorageEnabled(true);
+                  s.setDatabaseEnabled(true);
+                  s.setAllowFileAccess(true);
+                  s.setAllowContentAccess(true);
+                  s.setLoadsImagesAutomatically(true);
+                  s.setMediaPlaybackRequiresUserGesture(false);
+                  s.setBuiltInZoomControls(false);
+                  s.setDisplayZoomControls(false);
+                  s.setUserAgentString(s.getUserAgentString() + " TakhtBeheshtiAndroid/1.0");
+                  CookieManager.getInstance().setAcceptCookie(true);
+                  CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
+
+                  webView.setWebChromeClient(new WebChromeClient() {
+                      @Override public void onProgressChanged(WebView view, int newProgress) {
+                          progress.setProgress(newProgress);
+                          progress.setVisibility(newProgress >= 100 ? View.GONE : View.VISIBLE);
+                      }
+                      @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                          if (fileCallback != null) fileCallback.onReceiveValue(null);
+                          fileCallback = callback;
+                          Intent intent;
+                          try { intent = params.createIntent(); }
+                          catch (Exception e) { intent = new Intent(Intent.ACTION_GET_CONTENT); intent.setType("*/*"); intent.addCategory(Intent.CATEGORY_OPENABLE); }
+                          try { startActivityForResult(intent, FILE_CHOOSER); }
+                          catch (ActivityNotFoundException e) { fileCallback = null; Toast.makeText(MainActivity.this, "انتخاب فایل در این دستگاه در دسترس نیست.", Toast.LENGTH_LONG).show(); }
+                          return true;
+                      }
+                  });
+
+                  webView.setWebViewClient(new WebViewClient() {
+                      @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) { return route(request.getUrl()); }
+                      @Override public boolean shouldOverrideUrlLoading(WebView view, String url) { return route(Uri.parse(url)); }
+                      @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                          if (request.isForMainFrame()) offline.setVisibility(View.VISIBLE);
+                      }
+                      @Override public void onPageFinished(WebView view, String url) { if (isOnline()) offline.setVisibility(View.GONE); }
+                  });
+
+                  webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> download(url, userAgent, contentDisposition, mimeType));
+              }
+
+              private boolean route(Uri uri) {
+                  String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase();
+                  if ((scheme.equals("http") || scheme.equals("https")) && SITE_HOST.equalsIgnoreCase(uri.getHost())) return false;
+                  if (scheme.equals("http") || scheme.equals("https") || scheme.equals("mailto") || scheme.equals("tel")) {
+                      try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); }
+                      catch (Exception e) { Toast.makeText(this, "باز کردن این لینک ممکن نشد.", Toast.LENGTH_SHORT).show(); }
+                      return true;
+                  }
+                  return false;
+              }
+
+              private void download(String url, String userAgent, String contentDisposition, String mimeType) {
+                  pendingDownloadUrl = url; pendingUserAgent = userAgent; pendingContentDisposition = contentDisposition; pendingMimeType = mimeType;
+                  if (Build.VERSION.SDK_INT <= 28 && checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                      requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, STORAGE_PERMISSION); return;
+                  }
+                  startDownload();
+              }
+
+              private void startDownload() {
+                  try {
+                      String fileName = URLUtil.guessFileName(pendingDownloadUrl, pendingContentDisposition, pendingMimeType);
+                      DownloadManager.Request request = new DownloadManager.Request(Uri.parse(pendingDownloadUrl));
+                      request.setTitle(fileName);
+                      request.setDescription("در حال دانلود از مدرسه علمیه محمدیه تخت");
+                      request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+                      request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName);
+                      if (pendingMimeType != null) request.setMimeType(pendingMimeType);
+                      if (pendingUserAgent != null) request.addRequestHeader("User-Agent", pendingUserAgent);
+                      String cookies = CookieManager.getInstance().getCookie(pendingDownloadUrl);
+                      if (cookies != null) request.addRequestHeader("Cookie", cookies);
+                      ((DownloadManager)getSystemService(DOWNLOAD_SERVICE)).enqueue(request);
+                      Toast.makeText(this, "دانلود آغاز شد.", Toast.LENGTH_SHORT).show();
+                  } catch (Exception e) {
+                      try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(pendingDownloadUrl))); }
+                      catch (Exception ignored) { Toast.makeText(this, "دانلود ممکن نشد.", Toast.LENGTH_LONG).show(); }
+                  }
+              }
+
+              private boolean isOnline() {
+                  ConnectivityManager cm = (ConnectivityManager)getSystemService(Context.CONNECTIVITY_SERVICE);
+                  if (cm == null) return false;
+                  Network network = cm.getActiveNetwork();
+                  if (network == null) return false;
+                  NetworkCapabilities c = cm.getNetworkCapabilities(network);
+                  return c != null && c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+              }
+
+              @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+                  super.onActivityResult(requestCode, resultCode, data);
+                  if (requestCode == FILE_CHOOSER && fileCallback != null) {
+                      Uri[] result = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+                      fileCallback.onReceiveValue(result);
+                      fileCallback = null;
+                  }
+              }
+
+              @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
+                  super.onRequestPermissionsResult(requestCode, permissions, results);
+                  if (requestCode == STORAGE_PERMISSION && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) startDownload();
+              }
+
+              @Override public void onBackPressed() {
+                  if (webView.canGoBack()) webView.goBack(); else super.onBackPressed();
+              }
+
+              @Override protected void onSaveInstanceState(Bundle outState) { webView.saveState(outState); super.onSaveInstanceState(outState); }
+          }
+          EOF
+          if curl -fL --retry 2 'https://app-61p2x9.v2.appdeploy.ai/resources/school-logo.jpg' -o takhtapp/app/src/main/res/drawable/school_logo.jpg; then rm takhtapp/app/src/main/res/drawable/school_logo.xml; fi
+      - name: Build installable APK
+        working-directory: takhtapp
+        run: gradle --no-daemon assembleDebug
+      - name: Rename APK
+        run: cp takhtapp/app/build/outputs/apk/debug/app-debug.apk 'Madrasah-Mohammadia-Takht.apk'
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Madrasah-Mohammadia-Takht-APK
+          path: Madrasah-Mohammadia-Takht.apk
+          if-no-files-found: error
