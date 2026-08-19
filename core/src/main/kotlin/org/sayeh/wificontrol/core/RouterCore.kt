@@ -5,6 +5,7 @@ import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.FormBody
 import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -15,12 +16,6 @@ import java.io.File
 import java.net.URI
 import java.util.Locale
 import java.util.concurrent.TimeUnit
-
-/**
- * Shared, profile-driven router control engine.
- * Android and Windows use the same code path. No command is considered successful
- * until it is read back from the router and verified.
- */
 
 data class LoginSpec(
     val pageUrl: String = "/login_security.html",
@@ -129,7 +124,11 @@ class RouterHttpEngine(
             val loginDoc = getDoc(profile.login.pageUrl)
             val form = selectForm(loginDoc, profile.login.formSelector)
                 ?: return CommandResult(false, false, "فرم ورود firmware پیدا نشد.")
-            val overrides = linkedMapOf(profile.login.usernameField to username, profile.login.passwordField to password)
+            val usernameName = resolveFieldName(form, profile.login.usernameField, "text")
+                ?: return CommandResult(false, false, "فیلد Username در فرم ورود پیدا نشد.")
+            val passwordName = resolveFieldName(form, profile.login.passwordField, "password")
+                ?: return CommandResult(false, false, "فیلد Password در فرم ورود پیدا نشد.")
+            val overrides = linkedMapOf(usernameName to username, passwordName to password)
             profile.login.submitField?.let { overrides[it] = profile.login.submitValue.orEmpty() }
             submitForm(loginDoc, form, overrides)
             val root = getDoc("/")
@@ -301,8 +300,9 @@ class RouterHttpEngine(
             val fb = FormBody.Builder().apply { values.forEach { (k, v) -> add(k, v) } }.build()
             Request.Builder().url(action).post(fb).build()
         } else {
-            val parsed = okhttp3.HttpUrl.Companion.toHttpUrlOrNull(action) ?: throw IllegalStateException("Invalid form action")
-            val ub = parsed.newBuilder(); values.forEach { (k, v) -> ub.addQueryParameter(k, v) }
+            val parsed = action.toHttpUrlOrNull() ?: throw IllegalStateException("Invalid form action")
+            val ub = parsed.newBuilder()
+            values.forEach { (k, v) -> ub.addQueryParameter(k, v) }
             Request.Builder().url(ub.build()).get().build()
         }
         val response = execute(request)
@@ -321,6 +321,11 @@ class RouterHttpEngine(
         return el.attr("value")
     }
 
+    private fun resolveFieldName(form: Element, preferred: String, type: String): String? {
+        form.select("[name]").firstOrNull { it.attr("name").equals(preferred, true) }?.let { return it.attr("name") }
+        return form.select("input[type=$type][name]").firstOrNull()?.attr("name")
+    }
+
     private fun selectForm(doc: Document, selector: String): Element? = doc.selectFirst(selector) ?: doc.selectFirst("form")
     private fun looksLikeLogin(doc: Document): Boolean = doc.select("input[type=password]").isNotEmpty() && doc.text().contains("login", true)
 
@@ -332,8 +337,5 @@ class RouterHttpEngine(
         return URI(base).resolve(pathOrUrl.removePrefix("/")).toString()
     }
 
-    private fun normalizeMac(value: String): String {
-        val clean = value.trim().replace('-', ':').uppercase(Locale.US)
-        return if (clean.matches(Regex("^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$"))) clean else clean
-    }
+    private fun normalizeMac(value: String): String = value.trim().replace('-', ':').uppercase(Locale.US)
 }
