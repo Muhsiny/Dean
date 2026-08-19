@@ -29,24 +29,35 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Build safe TP-Link controller APK
-        run: gradle --no-daemon assembleDebug --stacktrace
-      - name: Prepare APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk /tmp/WiFi-Control-TPLink-TD-W8961N-v1.apk
-      - name: Upload APK artifact
+      - name: Build and capture result
+        shell: bash
+        run: |
+          set +e
+          gradle --no-daemon assembleDebug --stacktrace > /tmp/wifi-build.log 2>&1
+          code=$?
+          echo "$code" > /tmp/wifi-build-status.txt
+          set -e
+          if [ "$code" -eq 0 ]; then
+            cp app/build/outputs/apk/debug/app-debug.apk /tmp/WiFi-Control-TPLink-TD-W8961N-v1.apk
+          fi
+      - name: Upload APK artifact when successful
+        if: ${{ hashFiles('app/build/outputs/apk/debug/app-debug.apk') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: WiFi-Control-TPLink-TD-W8961N-v1
-          path: /tmp/WiFi-Control-TPLink-TD-W8961N-v1.apk
-          if-no-files-found: error
-      - name: Publish APK to main
+          path: app/build/outputs/apk/debug/app-debug.apk
+      - name: Publish build result to main
+        if: always()
+        shell: bash
         run: |
           git fetch origin main
           git checkout main
-          cp /tmp/WiFi-Control-TPLink-TD-W8961N-v1.apk ./WiFi-Control-TPLink-TD-W8961N-v1.apk
+          cp /tmp/wifi-build.log ./wifi-control-build.log || true
+          cp /tmp/wifi-build-status.txt ./wifi-control-build-status.txt || true
+          if [ -f /tmp/WiFi-Control-TPLink-TD-W8961N-v1.apk ]; then cp /tmp/WiFi-Control-TPLink-TD-W8961N-v1.apk ./WiFi-Control-TPLink-TD-W8961N-v1.apk; fi
           echo "$GITHUB_RUN_ID" > wifi-control-build-run.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -f WiFi-Control-TPLink-TD-W8961N-v1.apk wifi-control-build-run.txt
-          git commit -m 'Publish WiFi Control TP-Link APK v1' || exit 0
+          git add -f wifi-control-build.log wifi-control-build-status.txt wifi-control-build-run.txt WiFi-Control-TPLink-TD-W8961N-v1.apk 2>/dev/null || true
+          git commit -m 'Publish WiFi Control TP-Link build result' || exit 0
           git push origin main
