@@ -18,8 +18,8 @@ Daemon will be stopped at the end of the build
 > Task :app:processDebugMainManifest
 > Task :app:mergeDebugResources
 > Task :app:processDebugManifest
-> Task :app:javaPreCompileDebug
 > Task :app:processDebugManifestForPackage
+> Task :app:javaPreCompileDebug
 > Task :app:mergeDebugShaders
 > Task :app:compileDebugShaders NO-SOURCE
 > Task :app:generateDebugAssets UP-TO-DATE
@@ -62,7 +62,7 @@ Daemon will be stopped at the end of the build
 > Task :app:packageDebug
 > Task :app:createDebugApkListingFileRedirect
 > Task :app:assembleDebug
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build_step-1787169767139.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build_step-1787169830209.json
 
-BUILD SUCCESSFUL in 51s
+BUILD SUCCESSFUL in 48s
 36 actionable tasks: 36 executed
