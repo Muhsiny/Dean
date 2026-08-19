@@ -2,6 +2,8 @@ name: Build WiFi Control APK
 on:
   push:
     branches: [ wifi-router-control ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 jobs:
   build:
