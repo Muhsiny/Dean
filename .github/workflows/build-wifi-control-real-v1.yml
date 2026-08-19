@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - '.wifi-control-real-v1-trigger'
+      - '.github/workflows/build-wifi-control-real-v1.yml'
   workflow_dispatch:
   issues:
     types: [opened]
@@ -147,3 +147,5 @@ jobs:
           git add -f wifi-control-real-v1-* WiFi-Control-Real-v1-* 2>/dev/null || true
           git commit -m 'Publish WiFi Control Real v1 build results' || true
           git push origin main || true
+
+# trigger: 2026-08-20T01:55+04:30
