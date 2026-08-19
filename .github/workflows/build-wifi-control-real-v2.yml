@@ -9,12 +9,13 @@ on:
   issues:
     types: [opened]
 
+permissions:
+  contents: write
+
 jobs:
   android:
     if: github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-CONTROL-REAL-V2'
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -52,6 +53,7 @@ jobs:
             WiFi-Control-Real-v2-Android.sha256
 
   windows:
+    if: github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-CONTROL-REAL-V2'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -75,3 +77,23 @@ jobs:
           path: |
             WiFi-Control-Real-v2-Windows.zip
             WiFi-Control-Real-v2-Windows.sha256
+
+  record:
+    if: always() && (github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-CONTROL-REAL-V2')
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Record results
+        run: |
+          echo "$GITHUB_RUN_ID" > wifi-control-real-v2-run.txt
+          echo "android=${{ needs.android.result }}" > wifi-control-real-v2-results.txt
+          echo "windows=${{ needs.windows.result }}" >> wifi-control-real-v2-results.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -f wifi-control-real-v2-run.txt wifi-control-real-v2-results.txt
+          git commit -m 'Record WiFi Control Real v2 build results' || true
+          git push origin main || true
