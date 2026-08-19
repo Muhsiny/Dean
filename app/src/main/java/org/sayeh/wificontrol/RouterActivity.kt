@@ -5,7 +5,6 @@ import android.app.AlertDialog
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.webkit.JavascriptInterface
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -15,9 +14,12 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.URI
 import java.util.Locale
 
 class RouterActivity : AppCompatActivity() {
+    private data class Route(val url: String, val label: String)
+
     private lateinit var web: WebView
     private lateinit var status: TextView
     private lateinit var baseUrl: String
@@ -32,6 +34,7 @@ class RouterActivity : AppCompatActivity() {
     private var loginAttempts = 0
     private var dispatched = false
     private var finished = false
+    private var pageCallback: (() -> Unit)? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,7 +45,12 @@ class RouterActivity : AppCompatActivity() {
         pass = intent.getStringExtra("pass").orEmpty()
         action = intent.getStringExtra("action") ?: "sync"
         targetMac = intent.getStringExtra("targetMac")?.uppercase(Locale.US).orEmpty()
-        allowedMacs = intent.getStringExtra("allowedMacs")?.split(',')?.map { it.trim().uppercase(Locale.US) }?.filter { it.isNotBlank() }?.distinct() ?: emptyList()
+        allowedMacs = intent.getStringExtra("allowedMacs")
+            ?.split(',')
+            ?.map { it.trim().uppercase(Locale.US) }
+            ?.filter { it.isNotBlank() }
+            ?.distinct()
+            ?: emptyList()
 
         status = findViewById(R.id.routerStatus)
         web = findViewById(R.id.routerWeb)
@@ -53,40 +61,68 @@ class RouterActivity : AppCompatActivity() {
         web.settings.loadsImagesAutomatically = false
         web.settings.allowFileAccess = false
         web.settings.allowContentAccess = false
-        web.addJavascriptInterface(RouterBridge(), "AndroidBridge")
+        web.settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
         web.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
-                if (!finished) handler.postDelayed({ inspectLoginAndDispatch() }, 450)
+                if (!finished) handler.postDelayed({ handleLoadedPage() }, 300)
             }
 
             override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                if (request?.isForMainFrame == true && !finished) fail("روتر پاسخ نداد: ${error?.description ?: "خطای نامشخص"}")
+                if (request?.isForMainFrame == true && !finished) {
+                    val cb = pageCallback
+                    pageCallback = null
+                    if (cb != null) cb() else fail("روتر پاسخ نداد: ${error?.description ?: "خطای نامشخص"}")
+                }
             }
         }
-        status.text = "در حال اتصال به روتر…"
+
+        status.text = "در حال اتصال امن به روتر…"
         web.loadUrl(baseUrl)
     }
 
-    private fun inspectLoginAndDispatch() {
+    private fun handleLoadedPage() {
         if (finished) return
-        val js = """
-            (function(){try{var p=document.querySelector('input[type=password]');var t=(document.body?document.body.innerText:'').toLowerCase();return (!!p||location.href.toLowerCase().indexOf('login_security')>=0||(t.indexOf('username')>=0&&t.indexOf('password')>=0));}catch(e){return false;}})();
-        """.trimIndent()
-        web.evaluateJavascript(js) { raw ->
-            if (raw == "true") attemptAutoLogin()
-            else if (!dispatched) {
+        isLoginPage { login ->
+            if (login) {
+                attemptAutoLogin()
+                return@isLoginPage
+            }
+            loginAttempts = 0
+            val cb = pageCallback
+            if (cb != null) {
+                pageCallback = null
+                cb()
+            } else if (!dispatched) {
                 dispatched = true
-                loginAttempts = 0
-                status.text = "ورود واقعی موفق شد؛ در حال اجرای فرمان…"
-                handler.postDelayed({ dispatchAction() }, 350)
+                status.text = "ورود واقعی موفق شد؛ موتور Native فعال است."
+                handler.postDelayed({ dispatchAction() }, 220)
             }
         }
     }
 
+    private fun isLoginPage(callback: (Boolean) -> Unit) {
+        val js = """
+            (function(){try{
+              var p=document.querySelector('input[type=password]');
+              var t=(document.body?document.body.innerText:'').toLowerCase();
+              return !!p || location.href.toLowerCase().indexOf('login_security')>=0 || (t.indexOf('username')>=0&&t.indexOf('password')>=0&&t.indexOf('login')>=0);
+            }catch(e){return false;}})();
+        """.trimIndent()
+        web.evaluateJavascript(js) { callback(it == "true") }
+    }
+
     private fun attemptAutoLogin() {
-        if (loginAttempts >= 3) { fail("ورود خودکار موفق نشد. نام کاربری یا رمز را بررسی کن؛ هیچ تنظیمی تغییر نکرد."); return }
+        if (user.isBlank() || pass.isBlank()) {
+            fail("نام کاربری یا رمز ادمین خالی است.")
+            return
+        }
+        if (loginAttempts >= 3) {
+            fail("ورود خودکار موفق نشد. نام کاربری/رمز را بررسی کن؛ هیچ تنظیمی تغییر نکرد.")
+            return
+        }
         loginAttempts++
+        status.text = "در حال احراز هویت با firmware…"
         val uq = JSONObject.quote(user)
         val pq = JSONObject.quote(pass)
         val js = """
@@ -95,18 +131,19 @@ class RouterActivity : AppCompatActivity() {
               var p=document.querySelector('input[type=password],input[name*=pass i],input[id*=pass i]');
               if(!u||!p)return 'NO_FORM';
               u.value=$uq;p.value=$pq;
-              u.dispatchEvent(new Event('input',{bubbles:true}));p.dispatchEvent(new Event('input',{bubbles:true}));
-              u.dispatchEvent(new Event('change',{bubbles:true}));p.dispatchEvent(new Event('change',{bubbles:true}));
+              ['input','change'].forEach(function(n){u.dispatchEvent(new Event(n,{bubbles:true}));p.dispatchEvent(new Event(n,{bubbles:true}));});
               var f=p.form||u.form||document.forms[0];
-              if(f){var s=f.querySelector('input[type=submit],button[type=submit],input[type=button],button');if(s){s.click();return 'CLICKED';}f.submit();return 'SUBMITTED';}
-              return 'NO_SUBMIT';
+              if(!f)return 'NO_FORM';
+              var bs=f.querySelectorAll('input[type=submit],button[type=submit],input[type=button],button');
+              for(var i=0;i<bs.length;i++){var s=((bs[i].value||bs[i].innerText||'')+'').toLowerCase();if(s.indexOf('login')>=0){bs[i].click();return 'CLICKED';}}
+              if(bs.length){bs[0].click();return 'CLICKED';}
+              f.submit();return 'SUBMITTED';
             }catch(e){return 'ERR:'+e;}})();
         """.trimIndent()
-        status.text = "در حال ورود به firmware…"
         web.evaluateJavascript(js) { raw ->
             val r = decodeJs(raw)
             if (r.startsWith("NO_") || r.startsWith("ERR")) fail("فرم ورود firmware شناخته نشد؛ هیچ تنظیمی تغییر نکرد.")
-            else handler.postDelayed({ inspectLoginAndDispatch() }, 1300)
+            else handler.postDelayed({ handleLoadedPage() }, 1200)
         }
     }
 
@@ -117,7 +154,7 @@ class RouterActivity : AppCompatActivity() {
             "block", "unblock" -> {
                 val owner = prefs.getString("protected_mac", null)?.uppercase(Locale.US)
                 if (targetMac.isBlank()) fail("MAC هدف مشخص نیست.")
-                else if (targetMac == owner) fail("تلفن مدیر محافظت‌شده است و قابل قطع نیست.")
+                else if (targetMac == owner) fail("تلفن مدیر محافظت‌شده است و هرگز قابل Block نیست.")
                 else navigateWireless { prepareDeviceAction(action, targetMac) }
             }
             "antiqr_enable" -> {
@@ -125,49 +162,281 @@ class RouterActivity : AppCompatActivity() {
                 if (owner.isNullOrBlank() || owner !in allowedMacs) fail("فهرست ضد QR ایمن نیست؛ تلفن مدیر داخل Allow‑List نیست.")
                 else navigateWireless { prepareAntiQrEnable() }
             }
-            "antiqr_disable" -> navigateWireless { prepareAntiQrDisable() }
+            "antiqr_disable" -> navigateWireless { prepareFilterOff("antiqr_disable") }
+            "filter_off" -> navigateWireless { prepareFilterOff("filter_off") }
             else -> fail("فرمان ناشناخته است؛ هیچ تنظیمی تغییر نکرد.")
         }
     }
 
     private fun syncDevices() {
-        status.text = "در حال خواندن جدول واقعی دستگاه‌های متصل…"
-        captureSnapshot()
-        navigateSection("Status", "Device Info", listOf("Current Connected Wireless Clients")) {
-            handler.postDelayed({ captureSnapshot() }, 400)
-            handler.postDelayed({ captureSnapshot() }, 1200)
-        }
-        handler.postDelayed({
-            if (!finished) {
-                val count = prefs.getStringSet("detected_macs", emptySet())?.size ?: 0
-                if (count > 0) succeed("$count دستگاه واقعی تازه‌سازی شد.") else fail("جدول دستگاه‌ها پیدا نشد؛ هیچ تنظیمی تغییر نکرد.")
-            }
-        }, 5000)
-    }
-
-    private fun navigateWireless(onFound: () -> Unit) {
-        navigateSection("Interface Setup", "Wireless", listOf("Wireless MAC Address Filter"), onFound)
-    }
-
-    private fun navigateSection(primary: String, secondary: String, markers: List<String>, onFound: () -> Unit) {
-        var step = 0
-        fun next() {
-            if (finished) return
-            checkMarkers(markers) { found ->
-                if (found) { onFound(); return@checkMarkers }
-                if (step >= 8) { calibrateFirmware(silent = true); fail("مسیر $primary → $secondary در این firmware خودکار پیدا نشد؛ هیچ فرمانی اجرا نشد."); return@checkMarkers }
-                val label = if (step % 3 == 0) primary else secondary
-                step++
-                status.text = "در حال یافتن $primary → $secondary…"
-                web.evaluateJavascript(smartClickJs(label)) { raw ->
-                    val result = decodeJs(raw)
-                    prefs.edit().putString("last_click_diag", result.take(1000)).apply()
-                    handler.postDelayed({ next() }, 850)
+        status.text = "در حال خواندن فقط جدول واقعی دستگاه‌های متصل…"
+        extractClients { count ->
+            if (count > 0) succeed("$count دستگاه آنلاین از جدول واقعی روتر تازه‌سازی شد.")
+            else {
+                findPageWithMarkers(
+                    key = "status_route",
+                    markers = listOf("current connected wireless clients"),
+                    menuPath = listOf("Status", "Device Info"),
+                    hints = listOf("status", "device", "info")
+                ) {
+                    extractClients { second ->
+                        if (second > 0) succeed("$second دستگاه آنلاین از جدول واقعی روتر تازه‌سازی شد.")
+                        else fail("جدول Current Connected Wireless Clients پیدا شد اما هیچ MAC قابل استخراج نبود.")
+                    }
                 }
             }
         }
-        next()
     }
+
+    private fun extractClients(callback: (Int) -> Unit) {
+        val js = """
+            (function(){
+              function macs(s){var r=(s||'').match(/\b(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}\b/ig)||[];return r.map(function(x){return x.replace(/-/g,':').toUpperCase();});}
+              function scan(w){
+                try{
+                  var d=w.document, all=(d.body?d.body.innerText:'');
+                  var rm=''; var m=all.match(/MAC\s*Address\s*[:：]?\s*((?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2})/i);if(m)rm=m[1].replace(/-/g,':').toUpperCase();
+                  var best=null, tables=d.querySelectorAll('table');
+                  for(var i=0;i<tables.length;i++){
+                    var t=tables[i]; if(t.querySelector('table'))continue;
+                    var rows=t.querySelectorAll('tr'), found=[];
+                    for(var j=0;j<rows.length;j++){var a=macs(rows[j].innerText);if(a.length)found.push(a[0]);}
+                    if(!found.length)continue;
+                    var anc=t, near='';for(var k=0;k<4&&anc;k++,anc=anc.parentElement)near+=(anc.innerText||'')+' ';
+                    var score=found.length*20+(near.toLowerCase().indexOf('current connected wireless clients')>=0?200:0)-Math.min((t.innerText||'').length/100,40);
+                    if(!best||score>best.score)best={score:score,macs:found};
+                  }
+                  if(best&&best.macs.length){return {router:rm,clients:best.macs};}
+                  for(var f=0;f<w.frames.length;f++){var z=scan(w.frames[f]);if(z&&z.clients&&z.clients.length)return z;}
+                  return {router:rm,clients:[]};
+                }catch(e){return {router:'',clients:[]};}
+              }
+              return JSON.stringify(scan(window));
+            })();
+        """.trimIndent()
+        web.evaluateJavascript(js) { raw ->
+            try {
+                val obj = JSONObject(decodeJs(raw))
+                val routerMac = obj.optString("router").uppercase(Locale.US)
+                if (routerMac.isNotBlank()) prefs.edit().putString("router_mac", routerMac).apply()
+                val arr = obj.optJSONArray("clients") ?: JSONArray()
+                val online = linkedSetOf<String>()
+                for (i in 0 until arr.length()) {
+                    val mac = arr.optString(i).uppercase(Locale.US)
+                    if (mac.matches(Regex("^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$")) && mac != routerMac) online.add(mac)
+                }
+                val known = prefs.getStringSet("known_macs", emptySet())?.map { it.uppercase(Locale.US) }?.toMutableSet() ?: mutableSetOf()
+                known.addAll(online)
+                prefs.edit().putStringSet("online_macs", online).putStringSet("known_macs", known).apply()
+                callback(online.size)
+            } catch (_: Exception) {
+                callback(0)
+            }
+        }
+    }
+
+    private fun calibrateFirmware() {
+        status.text = "در حال کشف مستقیم مسیر Wireless MAC Filter…"
+        navigateWireless {
+            inspectFilterState { state ->
+                val capacity = state.optInt("capacity", 0)
+                val route = web.url.orEmpty()
+                prefs.edit().putString("wireless_route", route).apply()
+                succeed("کالیبراسیون موفق شد. مسیر واقعی Wireless ذخیره شد${if (capacity > 0) " • ظرفیت فیلتر: $capacity MAC" else ""}.")
+            }
+        }
+    }
+
+    private fun navigateWireless(onFound: () -> Unit) {
+        findPageWithMarkers(
+            key = "wireless_route",
+            markers = listOf("wireless mac address filter"),
+            menuPath = listOf("Interface Setup", "Wireless"),
+            hints = listOf("wireless", "wlan", "interface", "mac", "filter")
+        ) { onFound() }
+    }
+
+    private fun findPageWithMarkers(
+        key: String,
+        markers: List<String>,
+        menuPath: List<String>,
+        hints: List<String>,
+        onFound: () -> Unit
+    ) {
+        val saved = prefs.getString(key, null)
+        if (!saved.isNullOrBlank() && isSafeRoute(saved)) {
+            loadUrlThen(saved) {
+                checkMarkers(markers) { ok ->
+                    if (ok) {
+                        prefs.edit().putString(key, web.url ?: saved).apply()
+                        onFound()
+                    } else {
+                        prefs.edit().remove(key).apply()
+                        followMenuPath(menuPath, 0, markers, key, hints, onFound)
+                    }
+                }
+            }
+        } else {
+            checkMarkers(markers) { already ->
+                if (already) {
+                    prefs.edit().putString(key, web.url ?: baseUrl).apply()
+                    onFound()
+                } else {
+                    followMenuPath(menuPath, 0, markers, key, hints, onFound)
+                }
+            }
+        }
+    }
+
+    private fun followMenuPath(
+        path: List<String>,
+        index: Int,
+        markers: List<String>,
+        key: String,
+        hints: List<String>,
+        onFound: () -> Unit
+    ) {
+        checkMarkers(markers) { found ->
+            if (found) {
+                prefs.edit().putString(key, web.url ?: baseUrl).apply()
+                onFound()
+                return@checkMarkers
+            }
+            if (index >= path.size) {
+                crawlForMarkers(markers, key, hints, onFound)
+                return@checkMarkers
+            }
+            openMenuLabel(path[index]) { _ ->
+                handler.postDelayed({ followMenuPath(path, index + 1, markers, key, hints, onFound) }, 350)
+            }
+        }
+    }
+
+    private fun openMenuLabel(label: String, callback: (Boolean) -> Unit) {
+        collectRoutes { routes ->
+            val best = routes
+                .filter { isSafeRoute(it.url) }
+                .maxByOrNull { routeScore(it, listOf(label)) }
+            if (best != null && routeScore(best, listOf(label)) >= 70) {
+                if (normalizeUrl(best.url) == normalizeUrl(web.url ?: "")) {
+                    callback(true)
+                } else {
+                    loadUrlThen(best.url) { callback(true) }
+                }
+            } else {
+                val q = JSONObject.quote(label.lowercase(Locale.US))
+                val js = """
+                    (function(){var want=$q,best=null;
+                      function txt(e){return ((e.innerText||e.textContent||e.value||e.alt||e.title||'')+'').trim().replace(/\s+/g,' ').toLowerCase();}
+                      function walk(w){try{var es=w.document.querySelectorAll('a,button,input,area,[onclick],[href],td,span,div,img');for(var i=0;i<es.length;i++){var e=es[i],t=txt(e),click=!!(e.onclick||(e.getAttribute&&e.getAttribute('href'))||/^(a|button|input|area)$/i.test(e.tagName||''));var s=(click&&t==want)?1000:(click&&t.indexOf(want)>=0&&t.length<want.length+35)?800:0;if(s&&(!best||s>best.s))best={e:e,s:s};}for(var j=0;j<w.frames.length;j++)walk(w.frames[j]);}catch(e){}}walk(window);if(!best)return false;var c=(best.e.closest?best.e.closest('a,button,[onclick],[href]'):null)||best.e;try{c.click();return true;}catch(e){try{c.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));return true;}catch(x){return false;}}})();
+                """.trimIndent()
+                web.evaluateJavascript(js) { raw ->
+                    val ok = raw == "true"
+                    handler.postDelayed({ callback(ok) }, if (ok) 800 else 80)
+                }
+            }
+        }
+    }
+
+    private fun crawlForMarkers(markers: List<String>, key: String, hints: List<String>, onFound: () -> Unit) {
+        status.text = "مسیر مستقیم پیدا نشد؛ در حال اسکن امن endpointهای firmware…"
+        val queue = ArrayDeque<Route>()
+        val seen = mutableSetOf<String>()
+        var probes = 0
+
+        fun enqueue(routes: List<Route>) {
+            routes.filter { isSafeRoute(it.url) }
+                .sortedByDescending { routeScore(it, hints) }
+                .forEach {
+                    val n = normalizeUrl(it.url)
+                    if (n.isNotBlank() && n !in seen && queue.none { q -> normalizeUrl(q.url) == n }) queue.addLast(it)
+                }
+        }
+
+        fun next() {
+            if (finished) return
+            if (probes >= 45 || queue.isEmpty()) {
+                fail("Wireless MAC Filter در endpointهای امن این firmware پیدا نشد. هیچ تنظیمی تغییر نکرد.")
+                return
+            }
+            val r = queue.removeFirst()
+            val n = normalizeUrl(r.url)
+            if (n in seen) { next(); return }
+            seen.add(n)
+            probes++
+            status.text = "کشف firmware… مرحله $probes"
+            loadUrlThen(r.url) {
+                checkMarkers(markers) { ok ->
+                    if (ok) {
+                        prefs.edit().putString(key, web.url ?: r.url).apply()
+                        onFound()
+                    } else {
+                        collectRoutes { more -> enqueue(more); next() }
+                    }
+                }
+            }
+        }
+
+        collectRoutes { routes ->
+            enqueue(routes)
+            if (queue.isEmpty()) fail("هیچ endpoint امنی برای کشف firmware پیدا نشد.") else next()
+        }
+    }
+
+    private fun collectRoutes(callback: (List<Route>) -> Unit) {
+        val js = """
+            (function(){
+              var out=[],seen={};
+              function add(u,l){try{if(!u)return;var a=new URL(u,location.href).href;if(a.indexOf(location.origin)!==0)return;if(seen[a+'|'+l])return;seen[a+'|'+l]=1;out.push({url:a,label:(l||'').replace(/\s+/g,' ').trim()});}catch(e){}}
+              function scan(w,d){if(d>8)return;try{var doc=w.document;add(w.location.href,doc.title||'page');var es=doc.querySelectorAll('a,area,frame,iframe,form,[href],[src],[onclick]');for(var i=0;i<es.length;i++){var e=es[i];var lab=((e.innerText||e.textContent||e.value||e.alt||e.title||'')+'').replace(/\s+/g,' ').trim();var vals=[e.getAttribute&&e.getAttribute('href'),e.getAttribute&&e.getAttribute('src'),e.getAttribute&&e.getAttribute('action')];for(var v=0;v<vals.length;v++)if(vals[v]&&!/^javascript:/i.test(vals[v]))add(vals[v],lab);var oc=(e.getAttribute&&e.getAttribute('onclick'))||'';var m=oc.match(/[A-Za-z0-9_./?=&%:-]+\.(?:html?|asp|cgi)(?:\?[^'\"\s<>]*)?/ig)||[];for(var z=0;z<m.length;z++)add(m[z],lab+' '+oc);}var html=doc.documentElement?doc.documentElement.outerHTML:'';var mm=html.match(/[A-Za-z0-9_./?=&%:-]+\.(?:html?|asp|cgi)(?:\?[^'\"\s<>]*)?/ig)||[];for(var q=0;q<mm.length&&q<120;q++)add(mm[q],'source');for(var f=0;f<w.frames.length;f++)scan(w.frames[f],d+1);}catch(e){}}
+              scan(window,0);return JSON.stringify(out.slice(0,240));
+            })();
+        """.trimIndent()
+        web.evaluateJavascript(js) { raw ->
+            val result = mutableListOf<Route>()
+            try {
+                val arr = JSONArray(decodeJs(raw))
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val u = o.optString("url")
+                    if (u.isNotBlank()) result.add(Route(u, o.optString("label")))
+                }
+            } catch (_: Exception) {}
+            callback(result.distinctBy { normalizeUrl(it.url) + "|" + it.label })
+        }
+    }
+
+    private fun routeScore(route: Route, hints: List<String>): Int {
+        val label = route.label.lowercase(Locale.US)
+        val url = route.url.lowercase(Locale.US)
+        var score = 0
+        hints.forEach { raw ->
+            val h = raw.lowercase(Locale.US)
+            val compact = h.replace(" ", "")
+            if (label == h) score += 120
+            else if (label.contains(h)) score += 90
+            if (url.contains(h.replace(" ", "_"))) score += 70
+            if (url.replace("_", "").replace("-", "").contains(compact)) score += 55
+        }
+        if (url.endsWith(".html") || url.endsWith(".htm")) score += 5
+        return score
+    }
+
+    private fun isSafeRoute(url: String): Boolean {
+        return try {
+            val u = URI(url)
+            val b = URI(baseUrl)
+            if (!u.host.equals(b.host, true)) return false
+            val s = url.lowercase(Locale.US)
+            val bad = listOf("logout", "reboot", "restart", "factory", "reset", "restore", "romfile", "upload", "firmware", "delete", "erase")
+            bad.none { s.contains(it) }
+        } catch (_: Exception) { false }
+    }
+
+    private fun normalizeUrl(url: String): String = try {
+        val u = URI(url)
+        URI(u.scheme?.lowercase(), u.userInfo, u.host?.lowercase(), u.port, u.path, u.query, null).toString().trimEnd('/')
+    } catch (_: Exception) { url.trimEnd('/') }
 
     private fun checkMarkers(markers: List<String>, callback: (Boolean) -> Unit) {
         val q = markers.joinToString(",") { JSONObject.quote(it.lowercase(Locale.US)) }
@@ -177,42 +446,35 @@ class RouterActivity : AppCompatActivity() {
         web.evaluateJavascript(js) { callback(it == "true") }
     }
 
-    private fun smartClickJs(label: String): String {
-        val q = JSONObject.quote(label.lowercase(Locale.US))
-        return """
-            (function(){var label=$q;var best=null;
-              function textOf(e){return ((e.innerText||e.textContent||e.value||e.alt||e.title||'')+'').trim().replace(/\s+/g,' ').toLowerCase();}
-              function attrs(e){return (((e.getAttribute&&e.getAttribute('href'))||'')+' '+((e.getAttribute&&e.getAttribute('onclick'))||'')+' '+((e.getAttribute&&e.getAttribute('name'))||'')+' '+((e.getAttribute&&e.getAttribute('id'))||'')).toLowerCase();}
-              function consider(w,e){var t=textOf(e),a=attrs(e),tag=(e.tagName||'').toLowerCase(),clickable=(tag=='a'||tag=='button'||tag=='input'||tag=='area'||!!e.onclick||!!(e.getAttribute&&e.getAttribute('href')));var score=0;
-                if(clickable&&t==label)score=1000;else if(clickable&&t.indexOf(label)>=0&&t.length<=label.length+30)score=900;else if(clickable&&a.indexOf(label.replace(/\s+/g,''))>=0)score=800;else if(clickable&&a.indexOf(label)>=0)score=780;else if(!clickable&&t==label)score=600;else if(!clickable&&t.indexOf(label)>=0&&t.length<=label.length+20)score=500;
-                if(score>0&&(!best||score>best.score||(score==best.score&&t.length<best.text.length)))best={w:w,e:e,score:score,text:t,tag:tag,attrs:a};}
-              function walk(w){try{var d=w.document;var els=d.querySelectorAll('a,button,input,area,[onclick],[href],td,span,div,img');for(var i=0;i<els.length;i++)consider(w,els[i]);for(var j=0;j<w.frames.length;j++)walk(w.frames[j]);}catch(e){}}
-              walk(window);if(!best)return JSON.stringify({ok:false,label:label});
-              var e=best.e;var c=(e.closest?e.closest('a,button,[onclick],[href]'):null)||e;try{c.scrollIntoView({block:'center'});}catch(x){}try{c.focus();}catch(x){}
-              try{if(typeof c.onclick==='function')c.onclick.call(c,new MouseEvent('click',{bubbles:true,cancelable:true}));}catch(x){}
-              try{c.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true}));c.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true}));c.click();}catch(x){try{c.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));}catch(y){}}
-              var href=(c.getAttribute&&c.getAttribute('href'))||'';if(href&&href!='#'&&!/^javascript:/i.test(href)){try{best.w.location.href=href;}catch(x){}}
-              return JSON.stringify({ok:true,label:label,score:best.score,text:best.text,tag:best.tag,attrs:best.attrs});})();
-        """.trimIndent()
+    private fun loadUrlThen(url: String, callback: () -> Unit) {
+        if (finished) return
+        pageCallback = callback
+        web.loadUrl(url)
     }
 
     private fun prepareDeviceAction(mode: String, mac: String) {
+        status.text = if (mode == "block") "در حال آماده‌سازی Block واقعی…" else "در حال آماده‌سازی Unblock واقعی…"
         val modeQ = JSONObject.quote(mode)
         val macQ = JSONObject.quote(mac)
         val js = filterPrelude() + """
-            var d=findDoc(window);if(!d)return 'NO_FILTER';var box=findBox(d);if(!box)return 'NO_BOX';var sel=findAction(box,d);if(!sel)return 'NO_ACTION_SELECT';
-            if($modeQ=='block')setSelect(sel,'deny association');else if(selected(sel).indexOf('deny association')<0)return 'NOT_DENY_MODE';
-            setActive(box,d,true);var ins=findMacInputs(box,d);if(ins.length==0)return 'NO_MAC_INPUTS';
-            if($modeQ=='block'){for(var i=0;i<ins.length;i++)if(norm(ins[i].value)==norm($macQ))return 'ALREADY_PRESENT';var slot=null;for(var j=0;j<ins.length;j++){var v=norm(ins[j].value);if(!slot&&(v==''||v=='00:00:00:00:00:00'))slot=ins[j];}if(!slot)return 'NO_EMPTY_SLOT';slot.value=$macQ;slot.dispatchEvent(new Event('change',{bubbles:true}));return 'READY_BLOCK';}
-            for(var k=0;k<ins.length;k++){if(norm(ins[k].value)==norm($macQ)){ins[k].value='00:00:00:00:00:00';ins[k].dispatchEvent(new Event('change',{bubbles:true}));return 'READY_UNBLOCK';}}return 'TARGET_NOT_FOUND';})();
+            var d=findDoc(window);if(!d)return 'NO_FILTER';var f=findForm(d);if(!f)return 'NO_FORM';var sel=findAction(f);if(!sel)return 'NO_ACTION_SELECT';
+            if($modeQ=='block')setSelect(sel,'deny association');else if(selected(sel).indexOf('deny association')<0)return 'ALREADY_ALLOWED';
+            if(!setEnabled(f,true))return 'NO_ENABLE_CONTROL';var ins=findMacInputs(f);if(ins.length==0)return 'NO_MAC_INPUTS';
+            if($modeQ=='block'){
+              for(var i=0;i<ins.length;i++)if(norm(ins[i].value)==norm($macQ))return 'ALREADY_PRESENT';
+              var slot=null;for(var j=0;j<ins.length;j++){var v=norm(ins[j].value);if(!slot&&(v==''||v=='00:00:00:00:00:00'))slot=ins[j];}
+              if(!slot)return 'NO_EMPTY_SLOT';slot.value=$macQ;slot.dispatchEvent(new Event('input',{bubbles:true}));slot.dispatchEvent(new Event('change',{bubbles:true}));return 'READY_BLOCK';
+            }
+            for(var k=0;k<ins.length;k++){if(norm(ins[k].value)==norm($macQ)){ins[k].value='00:00:00:00:00:00';ins[k].dispatchEvent(new Event('input',{bubbles:true}));ins[k].dispatchEvent(new Event('change',{bubbles:true}));return 'READY_UNBLOCK';}}
+            return 'TARGET_NOT_FOUND';})();
         """.trimIndent()
         web.evaluateJavascript(js) { raw ->
             when (val r = decodeJs(raw)) {
-                "READY_BLOCK" -> confirmSave("قطع واقعی دستگاه", "MAC $mac در Deny Association آماده شد. SAVE واقعی روتر اجرا شود؟", mode, mac)
-                "READY_UNBLOCK" -> confirmSave("وصل‌کردن دوباره", "MAC $mac از Deny Association حذف شد. SAVE واقعی اجرا شود؟", mode, mac)
-                "ALREADY_PRESENT" -> { markBlocked(mac, true); succeed("این دستگاه از قبل در Deny Association روتر بود.") }
-                "TARGET_NOT_FOUND" -> { markBlocked(mac, false); succeed("این MAC در فهرست Deny پیدا نشد؛ دستگاه باید قابل اتصال باشد.") }
-                else -> fail("فیلتر واقعی پیدا شد اما آماده‌سازی فرمان ناموفق بود: $r")
+                "READY_BLOCK" -> confirmSaveAndVerify("قطع واقعی دستگاه", "قانون Deny برای $mac آماده است. SAVE واقعی اجرا شود؟", "block", mac)
+                "READY_UNBLOCK" -> confirmSaveAndVerify("وصل‌کردن دوباره", "MAC $mac از Deny حذف شده است. SAVE واقعی اجرا شود؟", "unblock", mac)
+                "ALREADY_PRESENT" -> verifyDeviceAction("block", mac)
+                "TARGET_NOT_FOUND", "ALREADY_ALLOWED" -> verifyDeviceAction("unblock", mac)
+                else -> fail("فرم Wireless پیدا شد اما فرمان آماده نشد: $r")
             }
         }
     }
@@ -221,113 +483,151 @@ class RouterActivity : AppCompatActivity() {
         if (allowedMacs.isEmpty()) { fail("Allow‑List خالی است."); return }
         val arr = allowedMacs.joinToString(",") { JSONObject.quote(it) }
         val js = filterPrelude() + """
-            var wanted=[$arr];var d=findDoc(window);if(!d)return 'NO_FILTER';var box=findBox(d);if(!box)return 'NO_BOX';var sel=findAction(box,d);if(!sel)return 'NO_ACTION_SELECT';setSelect(sel,'allow association');setActive(box,d,true);var ins=findMacInputs(box,d);if(ins.length<wanted.length)return 'NOT_ENOUGH_SLOTS';for(var i=0;i<ins.length;i++){ins[i].value=(i<wanted.length?wanted[i]:'00:00:00:00:00:00');ins[i].dispatchEvent(new Event('change',{bubbles:true}));}return 'READY_ALLOW';})();
+            var wanted=[$arr];var d=findDoc(window);if(!d)return 'NO_FILTER';var f=findForm(d);if(!f)return 'NO_FORM';var sel=findAction(f);if(!sel)return 'NO_ACTION_SELECT';var ins=findMacInputs(f);if(ins.length<wanted.length)return 'NOT_ENOUGH_SLOTS:'+ins.length;if(!setEnabled(f,true))return 'NO_ENABLE_CONTROL';setSelect(sel,'allow association');
+            for(var i=0;i<ins.length;i++){ins[i].value=(i<wanted.length?wanted[i]:'00:00:00:00:00:00');ins[i].dispatchEvent(new Event('input',{bubbles:true}));ins[i].dispatchEvent(new Event('change',{bubbles:true}));}
+            return 'READY_ALLOW:'+ins.length;})();
         """.trimIndent()
         web.evaluateJavascript(js) { raw ->
             val r = decodeJs(raw)
-            if (r == "READY_ALLOW") confirmSave("فعال‌سازی ضد QR", "فقط ${allowedMacs.size} دستگاه در Allow Association باقی می‌مانند. SAVE واقعی اجرا شود؟", "antiqr_enable", "")
-            else fail("ضد QR آماده نشد: $r")
+            if (r.startsWith("READY_ALLOW")) {
+                confirmSaveAndVerify("فعال‌سازی ضد QR", "Allow Association با ${allowedMacs.size} دستگاه آماده است. SAVE واقعی اجرا شود؟", "antiqr_enable", "")
+            } else if (r.startsWith("NOT_ENOUGH_SLOTS")) {
+                val capacity = r.substringAfter(':', "0")
+                fail("ظرفیت واقعی MAC Filter فقط $capacity خانه است؛ تعداد دستگاه‌های مجاز را کم کن.")
+            } else fail("ضد QR آماده نشد: $r")
         }
     }
 
-    private fun prepareAntiQrDisable() {
+    private fun prepareFilterOff(mode: String) {
         val js = filterPrelude() + """
-            var d=findDoc(window);if(!d)return 'NO_FILTER';var box=findBox(d);if(!box)return 'NO_BOX';setActive(box,d,false);return 'READY_OFF';})();
+            var d=findDoc(window);if(!d)return 'NO_FILTER';var f=findForm(d);if(!f)return 'NO_FORM';if(!setEnabled(f,false))return 'NO_ENABLE_CONTROL';return 'READY_OFF';})();
         """.trimIndent()
         web.evaluateJavascript(js) { raw ->
-            if (decodeJs(raw) == "READY_OFF") confirmSave("خاموش‌کردن ضد QR", "MAC Filter غیرفعال می‌شود. SAVE واقعی اجرا شود؟", "antiqr_disable", "")
-            else fail("غیرفعال‌سازی آماده نشد: ${decodeJs(raw)}")
+            val r = decodeJs(raw)
+            if (r == "READY_OFF") {
+                val title = if (mode == "filter_off") "بازگردانی اضطراری" else "خاموش‌کردن ضد QR"
+                confirmSaveAndVerify(title, "MAC Filter روی Deactivated آماده شده است. SAVE واقعی اجرا شود؟", mode, "")
+            } else fail("خاموش‌کردن فیلتر آماده نشد: $r")
         }
     }
 
-    private fun confirmSave(title: String, message: String, verifyMode: String, mac: String) {
+    private fun confirmSaveAndVerify(title: String, message: String, verifyMode: String, mac: String) {
         AlertDialog.Builder(this)
             .setTitle(title)
             .setMessage(message)
-            .setPositiveButton("SAVE و بررسی") { _, _ -> clickSaveAndVerify(verifyMode, mac) }
-            .setNegativeButton("لغو") { _, _ -> fail("فرمان لغو شد؛ هیچ تغییری ذخیره نشد.") }
-            .setCancelable(false)
+            .setPositiveButton("SAVE و بررسی") { _, _ ->
+                status.text = "در حال ذخیره روی روتر…"
+                web.evaluateJavascript(saveScript()) { raw ->
+                    val r = decodeJs(raw)
+                    if (r.startsWith("NO_")) {
+                        fail("دکمه SAVE واقعی پیدا نشد؛ هیچ موفقیتی ثبت نشد.")
+                    } else {
+                        handler.postDelayed({
+                            val route = prefs.getString("wireless_route", null)
+                            if (!route.isNullOrBlank() && isSafeRoute(route)) {
+                                loadUrlThen(route) { handler.postDelayed({ verifyAfterSave(verifyMode, mac) }, 300) }
+                            } else {
+                                verifyAfterSave(verifyMode, mac)
+                            }
+                        }, 1200)
+                    }
+                }
+            }
+            .setNegativeButton("لغو", null)
             .show()
     }
 
-    private fun clickSaveAndVerify(mode: String, mac: String) {
-        status.text = "در حال زدن SAVE واقعی روتر…"
-        val js = filterPrelude() + """
-            var d=findDoc(window);if(!d)return 'NO_FILTER';var box=findBox(d);var root=(box&&(box.closest?box.closest('form'):null))||d;var es=root.querySelectorAll('input,button,a');for(var i=0;i<es.length;i++){var t=((es[i].value||es[i].innerText||es[i].textContent||'')+'').trim().toLowerCase();if(t=='save'){try{es[i].click();return 'CLICKED';}catch(e){}}}return 'NO_SAVE';})();
-        """.trimIndent()
-        web.evaluateJavascript(js) { raw ->
-            if (decodeJs(raw) != "CLICKED") { fail("دکمه SAVE واقعی در فرم پیدا نشد؛ هیچ وضعیت موفقی ثبت نشد."); return@evaluateJavascript }
-            handler.postDelayed({ verifySaved(mode, mac) }, 1800)
-            handler.postDelayed({ if (!finished) verifySaved(mode, mac) }, 3400)
+    private fun verifyAfterSave(mode: String, mac: String) {
+        inspectFilterState { state ->
+            val enabled = state.optBoolean("enabled", false)
+            val actionText = state.optString("action").lowercase(Locale.US)
+            val arr = state.optJSONArray("macs") ?: JSONArray()
+            val macSet = mutableSetOf<String>()
+            for (i in 0 until arr.length()) macSet.add(arr.optString(i).uppercase(Locale.US))
+
+            when (mode) {
+                "block" -> {
+                    val ok = enabled && actionText.contains("deny association") && mac.uppercase(Locale.US) in macSet
+                    if (ok) {
+                        markBlocked(mac, true)
+                        succeed("Block واقعی تأیید شد: $mac در Deny Association ذخیره شده است.")
+                    } else fail("SAVE انجام شد اما Block در بررسی مجدد تأیید نشد؛ اپ وضعیت را موفق ثبت نکرد.")
+                }
+                "unblock" -> {
+                    val ok = !enabled || !actionText.contains("deny association") || mac.uppercase(Locale.US) !in macSet
+                    if (ok) {
+                        markBlocked(mac, false)
+                        succeed("Unblock واقعی تأیید شد: $mac دیگر در Deny فعال نیست.")
+                    } else fail("Unblock بعد از SAVE تأیید نشد؛ وضعیت اپ تغییر نکرد.")
+                }
+                "antiqr_enable" -> {
+                    val wanted = allowedMacs.map { it.uppercase(Locale.US) }.toSet()
+                    val ok = enabled && actionText.contains("allow association") && macSet.containsAll(wanted)
+                    if (ok) {
+                        prefs.edit().putBoolean("anti_qr_active", true).putStringSet("allowed_macs", wanted).apply()
+                        succeed("ضد QR واقعی فعال و Verify شد؛ فقط دستگاه‌های Allow‑List مجازند.")
+                    } else fail("Allow‑List بعد از SAVE کامل تأیید نشد؛ اپ ضد QR را فعال ثبت نکرد.")
+                }
+                "antiqr_disable", "filter_off" -> {
+                    if (!enabled) {
+                        prefs.edit().putBoolean("anti_qr_active", false).putStringSet("blocked_macs", emptySet()).apply()
+                        succeed(if (mode == "filter_off") "بازگردانی اضطراری تأیید شد؛ MAC Filter خاموش است." else "ضد QR خاموش و Verify شد.")
+                    } else fail("MAC Filter هنوز Active است؛ خاموش‌شدن تأیید نشد.")
+                }
+            }
         }
     }
 
-    private fun verifySaved(mode: String, mac: String) {
-        if (finished) return
-        val modeQ = JSONObject.quote(mode)
-        val macQ = JSONObject.quote(mac)
-        val allowedArr = allowedMacs.joinToString(",") { JSONObject.quote(it) }
+    private fun verifyDeviceAction(mode: String, mac: String) {
+        inspectFilterState { state ->
+            val enabled = state.optBoolean("enabled", false)
+            val actionText = state.optString("action").lowercase(Locale.US)
+            val arr = state.optJSONArray("macs") ?: JSONArray()
+            val set = mutableSetOf<String>()
+            for (i in 0 until arr.length()) set.add(arr.optString(i).uppercase(Locale.US))
+            val blocked = enabled && actionText.contains("deny association") && mac.uppercase(Locale.US) in set
+            if (mode == "block" && blocked) {
+                markBlocked(mac, true); succeed("Block واقعی از قبل روی روتر فعال بود و Verify شد.")
+            } else if (mode == "unblock" && !blocked) {
+                markBlocked(mac, false); succeed("این دستگاه در Deny فعال نیست؛ اتصال آن مجاز است.")
+            } else fail("وضعیت واقعی روتر با فرمان درخواستی همخوان نیست.")
+        }
+    }
+
+    private fun inspectFilterState(callback: (JSONObject) -> Unit) {
         val js = filterPrelude() + """
-            var mode=$modeQ,wanted=[$allowedArr],target=$macQ;var d=findDoc(window);if(!d)return 'NO_FILTER';var box=findBox(d);if(!box)return 'NO_BOX';var sel=findAction(box,d);var ins=findMacInputs(box,d);var vals=[];for(var i=0;i<ins.length;i++)vals.push(norm(ins[i].value));
-            if(mode=='block')return (sel&&selected(sel).indexOf('deny association')>=0&&vals.indexOf(norm(target))>=0)?'VERIFIED':'NOT_VERIFIED';
-            if(mode=='unblock')return vals.indexOf(norm(target))<0?'VERIFIED':'NOT_VERIFIED';
-            if(mode=='antiqr_enable'){if(!sel||selected(sel).indexOf('allow association')<0)return 'NOT_VERIFIED';for(var j=0;j<wanted.length;j++)if(vals.indexOf(norm(wanted[j]))<0)return 'NOT_VERIFIED';return 'VERIFIED';}
-            if(mode=='antiqr_disable')return isActive(box,d)?'NOT_VERIFIED':'VERIFIED';return 'NOT_VERIFIED';})();
+            var d=findDoc(window);if(!d)return JSON.stringify({ok:false});var f=findForm(d);if(!f)return JSON.stringify({ok:false});var sel=findAction(f);var ins=findMacInputs(f);var ms=[];for(var i=0;i<ins.length;i++){var n=norm(ins[i].value);if(n&&n!='00:00:00:00:00:00')ms.push(n);}return JSON.stringify({ok:true,enabled:isEnabled(f),action:sel?selected(sel):'',capacity:ins.length,macs:ms});})();
         """.trimIndent()
         web.evaluateJavascript(js) { raw ->
-            if (decodeJs(raw) == "VERIFIED") {
-                when (mode) {
-                    "block" -> markBlocked(mac, true)
-                    "unblock" -> markBlocked(mac, false)
-                    "antiqr_enable" -> prefs.edit().putBoolean("anti_qr_active", true).apply()
-                    "antiqr_disable" -> prefs.edit().putBoolean("anti_qr_active", false).apply()
-                }
-                succeed(when (mode) {
-                    "block" -> "قطع واقعی $mac روی خود روتر تأیید شد."
-                    "unblock" -> "رفع مسدودی $mac روی خود روتر تأیید شد."
-                    "antiqr_enable" -> "ضد QR واقعی روی Allow Association تأیید شد."
-                    else -> "ضد QR روی خود روتر خاموش و تأیید شد."
-                })
-            }
+            try { callback(JSONObject(decodeJs(raw))) } catch (_: Exception) { callback(JSONObject()) }
         }
     }
 
     private fun filterPrelude(): String = """
         (function(){
-          function norm(v){return (v||'').trim().replace(/-/g,':').toUpperCase();}
-          function selected(s){try{return ((s.options[s.selectedIndex]&&s.options[s.selectedIndex].text)||'').toLowerCase();}catch(e){return '';}}
-          function setSelect(s,needle){for(var i=0;i<s.options.length;i++){if(((s.options[i].text||'')+'').toLowerCase().indexOf(needle)>=0){s.selectedIndex=i;s.value=s.options[i].value;s.dispatchEvent(new Event('change',{bubbles:true}));return true;}}return false;}
-          function findDoc(w){try{var t=(w.document.body?w.document.body.innerText:'');if(t.indexOf('Wireless MAC Address Filter')>=0)return w.document;for(var i=0;i<w.frames.length;i++){var d=findDoc(w.frames[i]);if(d)return d;}}catch(e){}return null;}
-          function findBox(d){var all=d.querySelectorAll('table,form,fieldset,div');var best=null,bestLen=999999;for(var i=0;i<all.length;i++){var t=(all[i].innerText||'');if(t.indexOf('Wireless MAC Address Filter')>=0&&t.length<bestLen){best=all[i];bestLen=t.length;}}return best||d.body;}
-          function findAction(box,d){var ss=box.querySelectorAll('select');for(var i=0;i<ss.length;i++){var txt='';for(var j=0;j<ss[i].options.length;j++)txt+=' '+(ss[i].options[j].text||'');txt=txt.toLowerCase();if(txt.indexOf('allow association')>=0&&txt.indexOf('deny association')>=0)return ss[i];}var all=d.querySelectorAll('select');for(var k=0;k<all.length;k++){var q='';for(var m=0;m<all[k].options.length;m++)q+=' '+(all[k].options[m].text||'');q=q.toLowerCase();if(q.indexOf('allow association')>=0&&q.indexOf('deny association')>=0)return all[k];}return null;}
-          function findMacInputs(box,d){var result=[];var xs=box.querySelectorAll('input[type=text]');for(var i=0;i<xs.length;i++){var n=((xs[i].name||'')+' '+(xs[i].id||'')).toLowerCase(),v=(xs[i].value||'');if(n.indexOf('mac')>=0||/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(v)||v=='')result.push(xs[i]);}if(result.length)return result;var ys=d.querySelectorAll('input[type=text]');for(var j=0;j<ys.length;j++){var n2=((ys[j].name||'')+' '+(ys[j].id||'')).toLowerCase(),v2=(ys[j].value||'');if(n2.indexOf('mac')>=0||/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(v2))result.push(ys[j]);}return result;}
-          function radioGroups(box,d){var rs=box.querySelectorAll('input[type=radio]');if(!rs.length)rs=d.querySelectorAll('input[type=radio]');return rs;}
-          function setActive(box,d,on){var rs=radioGroups(box,d),groups={};for(var i=0;i<rs.length;i++){var n=rs[i].name||('_'+i);if(!groups[n])groups[n]=[];groups[n].push(rs[i]);}for(var g in groups){var arr=groups[g];var context='';for(var j=0;j<arr.length;j++){var row=arr[j].closest?arr[j].closest('tr'):arr[j].parentElement;context+=' '+((row&&row.innerText)||'');}var low=context.toLowerCase();if(low.indexOf('activated')>=0&&low.indexOf('deactivated')>=0){var chosen=null;for(var k=0;k<arr.length;k++){var v=(arr[k].value||'').toLowerCase();if(on&&(v=='1'||v=='yes'||v=='on'||v=='activated'))chosen=arr[k];if(!on&&(v=='0'||v=='no'||v=='off'||v=='deactivated'))chosen=arr[k];}if(!chosen)chosen=on?arr[0]:arr[arr.length-1];chosen.checked=true;try{chosen.click();}catch(e){}return true;}}return false;}
-          function isActive(box,d){var rs=radioGroups(box,d),groups={};for(var i=0;i<rs.length;i++){var n=rs[i].name||('_'+i);if(!groups[n])groups[n]=[];groups[n].push(rs[i]);}for(var g in groups){var arr=groups[g],context='';for(var j=0;j<arr.length;j++){var row=arr[j].closest?arr[j].closest('tr'):arr[j].parentElement;context+=' '+((row&&row.innerText)||'');}var low=context.toLowerCase();if(low.indexOf('activated')>=0&&low.indexOf('deactivated')>=0){for(var k=0;k<arr.length;k++)if(arr[k].checked){var v=(arr[k].value||'').toLowerCase();if(v=='0'||v=='no'||v=='off'||v=='deactivated'||k==arr.length-1)return false;return true;}}}return false;}
+          function norm(v){return ((v||'')+'').trim().replace(/-/g,':').toUpperCase();}
+          function findDoc(w){try{var d=w.document,t=(d.body?d.body.innerText:'').toLowerCase();if(t.indexOf('wireless mac address filter')>=0)return d;for(var i=0;i<w.frames.length;i++){var z=findDoc(w.frames[i]);if(z)return z;}}catch(e){}return null;}
+          function findForm(d){var fs=d.forms,b=null,bs=-1;for(var i=0;i<fs.length;i++){var f=fs[i],t=(f.innerText||'').toLowerCase(),s=0;if(t.indexOf('wireless mac address filter')>=0)s+=200;var sels=f.querySelectorAll('select');for(var j=0;j<sels.length;j++){var o=(sels[j].innerText||'').toLowerCase();if(o.indexOf('allow association')>=0||o.indexOf('deny association')>=0)s+=150;}var ins=f.querySelectorAll('input');for(var k=0;k<ins.length;k++){var n=((ins[k].name||'')+' '+(ins[k].id||'')).toLowerCase();if(n.indexOf('mac')>=0)s+=5;}if(s>bs){bs=s;b=f;}}return b||d.forms[0]||null;}
+          function findAction(f){var ss=f.querySelectorAll('select');for(var i=0;i<ss.length;i++){var t=(ss[i].innerText||'').toLowerCase();if(t.indexOf('allow association')>=0||t.indexOf('deny association')>=0)return ss[i];}return null;}
+          function selected(s){try{return ((s.options[s.selectedIndex].text||s.value||'')+'').toLowerCase();}catch(e){return '';}}
+          function setSelect(s,want){for(var i=0;i<s.options.length;i++){var t=(s.options[i].text||'').toLowerCase();if(t.indexOf(want)>=0){s.selectedIndex=i;s.value=s.options[i].value;s.dispatchEvent(new Event('change',{bubbles:true}));return true;}}return false;}
+          function findMacInputs(f){var all=f.querySelectorAll('input[type=text],input:not([type])'),out=[];for(var i=0;i<all.length;i++){var e=all[i],n=((e.name||'')+' '+(e.id||'')).toLowerCase(),v=(e.value||'');var row=e.closest?e.closest('tr'):e.parentElement;var rt=(row&&row.innerText?row.innerText:'').toLowerCase();if(n.indexOf('mac')>=0||rt.indexOf('mac address')>=0||/^(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i.test(v))out.push(e);}return out;}
+          function radioGroups(f){var rs=f.querySelectorAll('input[type=radio]'),g={};for(var i=0;i<rs.length;i++){var n=rs[i].name||('__'+i);(g[n]||(g[n]=[])).push(rs[i]);}return g;}
+          function groupText(a){if(!a.length)return '';var r=a[0].closest?a[0].closest('tr'):a[0].parentElement;return (r&&r.innerText?r.innerText:'').toLowerCase();}
+          function filterGroup(f){var gs=radioGroups(f);for(var k in gs){var t=groupText(gs[k]);if(t.indexOf('active')>=0&&(t.indexOf('deactivated')>=0||t.indexOf('activated')>=0))return gs[k];}return null;}
+          function setEnabled(f,on){var g=filterGroup(f);if(!g||g.length<2)return false;var pick=null;for(var i=0;i<g.length;i++){var p=g[i].parentElement,tx=((p&&p.innerText)||g[i].value||'').toLowerCase();if(on&&tx.indexOf('deactivated')<0&&(tx.indexOf('active')>=0||tx.indexOf('activated')>=0))pick=g[i];if(!on&&tx.indexOf('deactivated')>=0)pick=g[i];}if(!pick)pick=on?g[0]:g[g.length-1];pick.checked=true;try{pick.click();}catch(e){}pick.dispatchEvent(new Event('change',{bubbles:true}));return true;}
+          function isEnabled(f){var g=filterGroup(f);if(!g||g.length<2)return false;for(var i=0;i<g.length;i++){if(g[i].checked){var p=g[i].parentElement,tx=((p&&p.innerText)||g[i].value||'').toLowerCase();if(tx.indexOf('deactivated')>=0)return false;if(i==g.length-1&&tx.indexOf('active')<0&&tx.indexOf('activated')<0)return false;return true;}}return false;}
     """.trimIndent()
 
-    private fun captureSnapshot() {
-        val js = """
-            (function(){var out=[];function grab(w,d){if(d>8)return;try{var x=w.document;if(x&&x.documentElement)out.push((x.body?x.body.innerText:'')+'\n'+(x.documentElement.outerHTML||''));for(var i=0;i<w.frames.length;i++)grab(w.frames[i],d+1);}catch(e){}}grab(window,0);AndroidBridge.snapshot(out.join('\n---FRAME---\n'));return 'SENT';})();
-        """.trimIndent()
-        web.evaluateJavascript(js, null)
-    }
-
-    private fun calibrateFirmware(silent: Boolean = false) {
-        if (!silent) status.text = "در حال کالیبراسیون مسیرهای firmware…"
-        val js = """
-            (function(){var out=[];function scan(w,d){if(d>8)return;try{var x=w.document;out.push('PAGE|'+w.location.href+'|'+(x.title||''));var es=x.querySelectorAll('a,button,input,area,[onclick],[href],td,span');for(var i=0;i<es.length;i++){var e=es[i];var t=((e.innerText||e.textContent||e.value||e.alt||e.title||'')+'').trim().replace(/\s+/g,' ');var h=(e.getAttribute&&e.getAttribute('href'))||'';var o=(e.getAttribute&&e.getAttribute('onclick'))||'';if(t||h||o)out.push('ELEM|'+t+'|'+h+'|'+o);}for(var j=0;j<w.frames.length;j++)scan(w.frames[j],d+1);}catch(e){}}scan(window,0);return JSON.stringify(out.slice(0,500));})();
-        """.trimIndent()
-        web.evaluateJavascript(js) { raw ->
-            val decoded = decodeJs(raw)
-            prefs.edit().putString("firmware_map", decoded.take(30000)).apply()
-            if (!silent) succeed("کالیبراسیون firmware ثبت شد. اکنون فرمان‌های بعدی از مسیرهای واقعی همین روتر استفاده می‌کنند.")
-        }
-    }
+    private fun saveScript(): String = """
+        (function(){
+          function findDoc(w){try{var d=w.document,t=(d.body?d.body.innerText:'').toLowerCase();if(t.indexOf('wireless mac address filter')>=0)return d;for(var i=0;i<w.frames.length;i++){var z=findDoc(w.frames[i]);if(z)return z;}}catch(e){}return null;}
+          var d=findDoc(window);if(!d)return 'NO_FILTER';var fs=d.forms,b=null,bs=-1;for(var i=0;i<fs.length;i++){var t=(fs[i].innerText||'').toLowerCase(),s=(t.indexOf('wireless mac address filter')>=0?200:0);if(s>bs){bs=s;b=fs[i];}}var f=b||d.forms[0];if(!f)return 'NO_FORM';var es=f.querySelectorAll('input[type=submit],input[type=button],button'),best=null,score=-999;for(var j=0;j<es.length;j++){var tx=((es[j].value||es[j].innerText||'')+'').trim().toLowerCase(),sc=0;if(tx=='save'||tx.indexOf('save')>=0)sc+=100;if(tx.indexOf('apply')>=0)sc+=90;if(tx.indexOf('submit')>=0)sc+=60;if(tx.indexOf('delete')>=0||tx.indexOf('reset')>=0||tx.indexOf('reboot')>=0)sc-=200;if(sc>score){score=sc;best=es[j];}}if(best&&score>0){best.click();return 'CLICKED_SAVE';}try{f.submit();return 'SUBMITTED_FORM';}catch(e){return 'NO_SAVE';}})();
+    """.trimIndent()
 
     private fun markBlocked(mac: String, blocked: Boolean) {
-        val set = prefs.getStringSet("blocked_macs", emptySet())?.toMutableSet() ?: mutableSetOf()
-        if (blocked) set.add(mac) else set.remove(mac)
+        val set = prefs.getStringSet("blocked_macs", emptySet())?.map { it.uppercase(Locale.US) }?.toMutableSet() ?: mutableSetOf()
+        if (blocked) set.add(mac.uppercase(Locale.US)) else set.remove(mac.uppercase(Locale.US))
         prefs.edit().putStringSet("blocked_macs", set).apply()
     }
 
@@ -344,31 +644,11 @@ class RouterActivity : AppCompatActivity() {
         finished = true
         prefs.edit().putString("router_last_message", message).apply()
         status.text = message
-        handler.postDelayed({ finish() }, 1600)
+        handler.postDelayed({ finish() }, 1800)
     }
 
     private fun decodeJs(raw: String?): String {
-        if (raw.isNullOrBlank() || raw == "null") return ""
-        return try { JSONArray("[$raw]").getString(0) } catch (_: Exception) { raw.trim('"') }
-    }
-
-    inner class RouterBridge {
-        @JavascriptInterface
-        fun snapshot(data: String) {
-            val lower = data.lowercase(Locale.US)
-            val marker = lower.indexOf("current connected wireless clients")
-            if (marker < 0) return
-            var section = data.substring(marker, minOf(data.length, marker + 7000))
-            val cuts = listOf("\nWAN\n", "\nADSL\n", "System Log", "Statistics")
-            var end = section.length
-            for (c in cuts) { val p = section.indexOf(c, ignoreCase = true); if (p > 0) end = minOf(end, p) }
-            section = section.substring(0, end)
-            val rx = Regex("(?i)\\b(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}\\b")
-            val macs = rx.findAll(section).map { it.value.replace('-', ':').uppercase(Locale.US) }.distinct().toMutableSet()
-            val prefix = data.substring(0, marker)
-            val routerMacMatch = Regex("(?i)MAC\\s*Address\\s*[:：]?\\s*((?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2})").find(prefix)
-            routerMacMatch?.groupValues?.getOrNull(1)?.replace('-', ':')?.uppercase(Locale.US)?.let { macs.remove(it) }
-            if (macs.isNotEmpty()) prefs.edit().putStringSet("detected_macs", macs).apply()
-        }
+        if (raw == null || raw == "null") return ""
+        return try { JSONArray("[$raw]").optString(0) } catch (_: Exception) { raw.trim('"').replace("\\\"", "\"").replace("\\n", "\n") }
     }
 }
