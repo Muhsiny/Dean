@@ -79,3 +79,5 @@ jobs:
       - name: Fail if build failed
         if: steps.build_step.outputs.rc != '0'
         run: exit 1
+
+# explicit trigger 2026-08-19
