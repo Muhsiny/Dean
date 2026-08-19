@@ -3,7 +3,7 @@ plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 android {
     namespace = "org.sayeh.wificontrol"
     compileSdk = 35
-    defaultConfig { applicationId = "org.sayeh.wificontrol"; minSdk = 23; targetSdk = 35; versionCode = 30; versionName = "3.0.0" }
+    defaultConfig { applicationId = "org.sayeh.wificontrol"; minSdk = 23; targetSdk = 35; versionCode = 31; versionName = "3.1.0" }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
     kotlinOptions { jvmTarget = "1.8" }
 }
