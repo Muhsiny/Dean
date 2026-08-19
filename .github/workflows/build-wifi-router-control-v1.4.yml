@@ -29,9 +29,18 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Build v1.4
-        run: gradle --no-daemon clean assembleDebug --stacktrace
+      - name: Build v1.4 and capture log
+        id: build_step
+        shell: bash
+        run: |
+          set +e
+          gradle --no-daemon clean assembleDebug --stacktrace > /tmp/wifi-v1.4-build.log 2>&1
+          rc=$?
+          cat /tmp/wifi-v1.4-build.log
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          exit 0
       - name: Verify APK
+        if: steps.build_step.outputs.rc == '0'
         run: |
           test -s app/build/outputs/apk/debug/app-debug.apk
           unzip -t app/build/outputs/apk/debug/app-debug.apk >/dev/null
@@ -40,7 +49,8 @@ jobs:
           grep -q "versionName='1.4.0'" /tmp/apk-badging.txt
           cp app/build/outputs/apk/debug/app-debug.apk /tmp/WiFi-Control-TPLink-TD-W8961N-v1.4.apk
           sha256sum /tmp/WiFi-Control-TPLink-TD-W8961N-v1.4.apk > /tmp/WiFi-Control-TPLink-TD-W8961N-v1.4.sha256
-      - name: Upload artifact
+      - name: Upload APK artifact
+        if: steps.build_step.outputs.rc == '0'
         uses: actions/upload-artifact@v4
         with:
           name: WiFi-Control-TPLink-TD-W8961N-v1.4
@@ -48,15 +58,24 @@ jobs:
             /tmp/WiFi-Control-TPLink-TD-W8961N-v1.4.apk
             /tmp/WiFi-Control-TPLink-TD-W8961N-v1.4.sha256
           if-no-files-found: error
-      - name: Publish to main
+      - name: Publish result to main
+        shell: bash
         run: |
           git fetch origin main
           git checkout main
-          cp /tmp/WiFi-Control-TPLink-TD-W8961N-v1.4.apk ./WiFi-Control-TPLink-TD-W8961N-v1.4.apk
-          cp /tmp/WiFi-Control-TPLink-TD-W8961N-v1.4.sha256 ./WiFi-Control-TPLink-TD-W8961N-v1.4.sha256
+          cp /tmp/wifi-v1.4-build.log ./wifi-control-v1.4-build.log
           echo "$GITHUB_RUN_ID" > wifi-control-v1.4-build-run.txt
+          echo "${{ steps.build_step.outputs.rc }}" > wifi-control-v1.4-build-exit.txt
+          if [ "${{ steps.build_step.outputs.rc }}" = "0" ]; then
+            cp /tmp/WiFi-Control-TPLink-TD-W8961N-v1.4.apk ./WiFi-Control-TPLink-TD-W8961N-v1.4.apk
+            cp /tmp/WiFi-Control-TPLink-TD-W8961N-v1.4.sha256 ./WiFi-Control-TPLink-TD-W8961N-v1.4.sha256
+          fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -f WiFi-Control-TPLink-TD-W8961N-v1.4.apk WiFi-Control-TPLink-TD-W8961N-v1.4.sha256 wifi-control-v1.4-build-run.txt
-          git commit -m 'Publish verified WiFi Control TP-Link APK v1.4'
+          git add -f wifi-control-v1.4-build.log wifi-control-v1.4-build-run.txt wifi-control-v1.4-build-exit.txt
+          if [ "${{ steps.build_step.outputs.rc }}" = "0" ]; then git add -f WiFi-Control-TPLink-TD-W8961N-v1.4.apk WiFi-Control-TPLink-TD-W8961N-v1.4.sha256; fi
+          git commit -m 'Publish WiFi Control TP-Link v1.4 build result'
           git push origin main
+      - name: Fail if build failed
+        if: steps.build_step.outputs.rc != '0'
+        run: exit 1
