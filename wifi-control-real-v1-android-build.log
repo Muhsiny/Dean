@@ -23,26 +23,26 @@ Daemon will be stopped at the end of the build
 > Task :androidApp:compressDebugAssets
 > Task :androidApp:checkDebugDuplicateClasses
 > Task :androidApp:desugarDebugFileDependencies
-> Task :androidApp:processDebugManifestForPackage
-> Task :androidApp:mergeDebugJniLibFolders
 > Task :androidApp:mergeLibDexDebug
+> Task :androidApp:mergeDebugJniLibFolders
+> Task :androidApp:processDebugManifestForPackage
 > Task :androidApp:mergeDebugNativeLibs NO-SOURCE
 > Task :androidApp:stripDebugDebugSymbols NO-SOURCE
 > Task :androidApp:processDebugResources
 > Task :androidApp:validateSigningDebug
-> Task :androidApp:mergeExtDexDebug
 > Task :androidApp:writeDebugAppMetadata
 > Task :androidApp:writeDebugSigningConfigVersions
+> Task :androidApp:mergeExtDexDebug
 > Task :androidApp:compileDebugKotlin
 > Task :androidApp:compileDebugJavaWithJavac NO-SOURCE
 > Task :androidApp:processDebugJavaRes
-> Task :androidApp:dexBuilderDebug
 > Task :androidApp:mergeDebugJavaResource
+> Task :androidApp:dexBuilderDebug
 > Task :androidApp:mergeProjectDexDebug
 > Task :androidApp:packageDebug
 > Task :androidApp:createDebugApkListingFileRedirect
 > Task :androidApp:assembleDebug
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_2-1787176086133.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build_step-1787176155170.json
 
-BUILD SUCCESSFUL in 53s
+BUILD SUCCESSFUL in 24s
 32 actionable tasks: 32 executed
