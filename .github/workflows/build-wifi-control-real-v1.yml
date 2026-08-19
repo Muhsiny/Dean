@@ -1,6 +1,10 @@
 name: Build WiFi Control Real v1
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.wifi-control-real-v1-trigger'
   workflow_dispatch:
   issues:
     types: [opened]
