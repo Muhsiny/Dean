@@ -112,7 +112,7 @@ private class DesktopController : JFrame("WiFi Control - TP-Link TD-W8961N") {
         }
     }
 
-    private fun selectedMacs(): List<String> = clientsList.selectedIndices.mapNotNull { idx -> clients.getOrNull(idx)?.mac }
+    private fun selectedMacs(): List<String> = clientsList.selectedIndices.toList().mapNotNull { idx -> clients.getOrNull(idx)?.mac }
 
     private fun blockSelected() {
         val macs = selectedMacs()
