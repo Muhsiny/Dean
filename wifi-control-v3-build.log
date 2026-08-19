@@ -18,8 +18,8 @@ Daemon will be stopped at the end of the build
 > Task :app:mergeDebugResources
 > Task :app:processDebugMainManifest
 > Task :app:processDebugManifest
-> Task :app:javaPreCompileDebug
 > Task :app:processDebugManifestForPackage
+> Task :app:javaPreCompileDebug
 > Task :app:mergeDebugShaders
 > Task :app:compileDebugShaders NO-SOURCE
 > Task :app:generateDebugAssets UP-TO-DATE
@@ -29,6 +29,7 @@ Daemon will be stopped at the end of the build
 > Task :app:checkDebugDuplicateClasses
 > Task :app:desugarDebugFileDependencies
 > Task :core:compileKotlin
+> Task :app:mergeExtDexDebug
 > Task :core:compileJava NO-SOURCE
 > Task :core:classes UP-TO-DATE
 > Task :core:jar
@@ -48,7 +49,6 @@ Daemon will be stopped at the end of the build
 > Task :app:writeDebugSigningConfigVersions
 > Task :desktop:checkKotlinGradlePluginConfigurationErrors SKIPPED
 > Task :desktop:processResources NO-SOURCE
-> Task :app:mergeExtDexDebug
 
 > Task :desktop:compileKotlin FAILED
 e: file:///home/runner/work/Dean/Dean/desktop/src/main/kotlin/org/sayeh/wificontrol/desktop/DesktopMain.kt:115:76 None of the following candidates is applicable:
@@ -60,7 +60,7 @@ fun <R : Any> CharSequence.mapNotNull(transform: (Char) -> R?): List<R>
 e: file:///home/runner/work/Dean/Dean/desktop/src/main/kotlin/org/sayeh/wificontrol/desktop/DesktopMain.kt:115:89 Cannot infer type for this parameter. Please specify it explicitly.
 
 > Task :app:compileDebugKotlin
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build_step-1787168206715.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build_step-1787168323528.json
 
 FAILURE: Build failed with an exception.
 
@@ -264,5 +264,5 @@ Caused by: org.jetbrains.kotlin.gradle.tasks.CompilationErrorException: Compilat
 	... 2 more
 
 
-BUILD FAILED in 43s
+BUILD FAILED in 1m 19s
 29 actionable tasks: 29 executed
