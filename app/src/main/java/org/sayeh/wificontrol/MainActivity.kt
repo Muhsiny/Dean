@@ -4,9 +4,13 @@ import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Base64
 import android.view.ViewGroup
 import android.webkit.HttpAuthHandler
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
@@ -14,6 +18,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import org.json.JSONArray
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
@@ -28,7 +33,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var username: EditText
     private lateinit var password: EditText
     private val prefs by lazy { getSharedPreferences("wifi_control_local", MODE_PRIVATE) }
+    private val handler = Handler(Looper.getMainLooper())
     private var lastClients: List<String> = emptyList()
+    private var scanActive = false
+    private var scanGeneration = 0
+    private var scanCandidates: List<String> = emptyList()
+    private var scanIndex = 0
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -44,17 +54,35 @@ class MainActivity : AppCompatActivity() {
 
         web.settings.javaScriptEnabled = true
         web.settings.domStorageEnabled = true
+        web.settings.loadsImagesAutomatically = false
         web.settings.allowContentAccess = false
         web.settings.allowFileAccess = false
         web.webViewClient = object : WebViewClient() {
             override fun onReceivedHttpAuthRequest(view: WebView?, handler: HttpAuthHandler?, host: String?, realm: String?) {
                 handler?.proceed(username.text.toString(), password.text.toString())
             }
+
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                if (!scanActive) return
+                val generation = scanGeneration
+                handler.postDelayed({
+                    if (scanActive && generation == scanGeneration) extractClientsFromLoadedPanel()
+                }, 1200)
+            }
+
+            override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                super.onReceivedError(view, request, error)
+                if (scanActive && request?.isForMainFrame == true) {
+                    tryNextScanCandidate("صفحه پاسخ نداد")
+                }
+            }
         }
 
         updateProtectedStatus()
+        renderClients()
         findViewById<Button>(R.id.testBtn).setOnClickListener { testReadOnly() }
-        findViewById<Button>(R.id.scanBtn).setOnClickListener { scanClients() }
+        findViewById<Button>(R.id.scanBtn).setOnClickListener { scanClientsThroughPanel() }
         findViewById<Button>(R.id.openStatus).setOnClickListener { openRouter(urlFor("/rpSys.html")) }
         findViewById<Button>(R.id.openAdmin).setOnClickListener { openRouter(baseUrl()) }
     }
@@ -120,40 +148,93 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun scanClients() {
-        status.text = "در حال خواندن صفحه وضعیت روتر…"
-        thread {
-            try {
-                val result = getReadOnly(urlFor("/rpSys.html"))
-                if (result.code == 401 || result.code == 403) {
-                    runOnUiThread { status.text = "روتر پاسخ داد، اما اطلاعات ورود صحیح نیست. هیچ تغییری انجام نشد." }
-                    return@thread
-                }
-                if (result.code !in 200..399) {
-                    runOnUiThread { status.text = "صفحه وضعیت با HTTP ${result.code} پاسخ داد. هیچ تغییری انجام نشد." }
-                    return@thread
-                }
-                val clients = parseClientMacs(result.body)
-                runOnUiThread {
-                    lastClients = clients
-                    renderClients()
-                    status.text = if (clients.isEmpty()) {
-                        "اتصال برقرار است، اما MAC دستگاه‌ها از این پاسخ استخراج نشد. صفحه وضعیت را از داخل اپ باز کن؛ هیچ تنظیمی تغییر نکرد."
-                    } else {
-                        "${clients.size} دستگاه/MAC از صفحه وضعیت خوانده شد. این فقط خواندن اطلاعات است."
-                    }
-                }
-            } catch (e: Exception) {
-                runOnUiThread { status.text = "خواندن دستگاه‌ها ناموفق بود: ${e.message ?: "خطای نامشخص"}" }
+    private fun scanClientsThroughPanel() {
+        scanGeneration++
+        scanActive = true
+        scanIndex = 0
+        scanCandidates = listOf(baseUrl(), urlFor("/rpSys.html"))
+        lastClients = emptyList()
+        renderClients()
+        status.text = "در حال ورود امن به پنل و خواندن جدول دستگاه‌های متصل…"
+        loadCurrentScanCandidate()
+    }
+
+    private fun loadCurrentScanCandidate() {
+        if (!scanActive) return
+        if (scanIndex >= scanCandidates.size) {
+            scanActive = false
+            status.text = "روتر وصل است، اما جدول دستگاه‌ها هنوز خودکار پیدا نشد. هیچ تنظیمی تغییر نکرد. «صفحه وضعیت روتر» را باز کن تا مسیر دقیق همین firmware را تشخیص دهیم."
+            return
+        }
+        val generation = ++scanGeneration
+        val target = scanCandidates[scanIndex]
+        val user = username.text.toString()
+        val pass = password.text.toString()
+        val headers = if (user.isNotBlank()) mapOf("Authorization" to authHeader(user, pass)) else emptyMap()
+        status.text = "در حال خواندن پنل واقعی روتر (${scanIndex + 1}/${scanCandidates.size})…"
+        web.stopLoading()
+        web.clearHistory()
+        web.loadUrl(target, headers)
+        handler.postDelayed({
+            if (scanActive && generation == scanGeneration) tryNextScanCandidate("زمان پاسخ صفحه تمام شد")
+        }, 11000)
+    }
+
+    private fun tryNextScanCandidate(reason: String) {
+        if (!scanActive) return
+        scanIndex++
+        if (scanIndex < scanCandidates.size) {
+            status.text = "$reason؛ مسیر بعدی پنل را آزمایش می‌کنم…"
+            loadCurrentScanCandidate()
+        } else {
+            scanActive = false
+            status.text = "$reason. اتصال اصلی روتر سالم است، اما جدول دستگاه‌ها از این دو مسیر استخراج نشد. هیچ تنظیمی تغییر نکرد."
+        }
+    }
+
+    private fun extractClientsFromLoadedPanel() {
+        if (!scanActive) return
+        val js = """
+            (function(){
+              var parts=[];
+              function grab(w){
+                try {
+                  var d=w.document;
+                  if(d && d.documentElement){ parts.push(d.documentElement.outerHTML || d.documentElement.innerHTML || ''); }
+                  for(var i=0;i<w.frames.length;i++){ try{ grab(w.frames[i]); }catch(e){} }
+                } catch(e){}
+              }
+              grab(window);
+              return parts.join('\n');
+            })();
+        """.trimIndent()
+        web.evaluateJavascript(js) { raw ->
+            val html = decodeJavascriptString(raw)
+            val clients = parseClientMacs(html)
+            if (clients.isNotEmpty()) {
+                scanActive = false
+                scanGeneration++
+                lastClients = clients
+                renderClients()
+                status.text = "${clients.size} دستگاه متصل از پنل واقعی روتر خوانده شد. هیچ تنظیمی تغییر نکرد."
+            } else {
+                tryNextScanCandidate("در این صفحه جدول دستگاه‌های متصل پیدا نشد")
             }
         }
     }
 
+    private fun decodeJavascriptString(raw: String?): String {
+        if (raw.isNullOrBlank() || raw == "null") return ""
+        return try { JSONArray("[$raw]").getString(0) } catch (_: Exception) { raw.trim('"') }
+    }
+
     private fun parseClientMacs(html: String): List<String> {
         if (html.isBlank()) return emptyList()
-        val title = "Current Connected Wireless Clients"
-        val start = html.indexOf(title, ignoreCase = true)
-        val section = if (start >= 0) html.substring(start, minOf(html.length, start + 60000)) else html
+        val markers = listOf("Current Connected Wireless Clients", "Connected Wireless Clients", "Wireless Clients")
+        val starts = markers.map { html.indexOf(it, ignoreCase = true) }.filter { it >= 0 }
+        if (starts.isEmpty()) return emptyList()
+        val start = starts.minOrNull() ?: return emptyList()
+        val section = html.substring(start, minOf(html.length, start + 60000))
         val macRegex = Regex("(?i)\\b(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}\\b")
         return macRegex.findAll(section)
             .map { it.value.replace('-', ':').uppercase(Locale.US) }
@@ -165,11 +246,10 @@ class MainActivity : AppCompatActivity() {
     private fun renderClients() {
         clientList.removeAllViews()
         if (lastClients.isEmpty()) {
-            val empty = TextView(this).apply {
+            clientList.addView(TextView(this).apply {
                 text = "هنوز دستگاهی خوانده نشده است."
                 setPadding(0, dp(10), 0, dp(10))
-            }
-            clientList.addView(empty)
+            })
             updateProtectedStatus()
             return
         }
