@@ -14,15 +14,15 @@ Daemon will be stopped at the end of the build
 > Task :app:extractDeepLinksDebug
 > Task :app:parseDebugLocalResources
 > Task :app:processDebugMainManifest
-> Task :app:mergeDebugResources
 > Task :app:processDebugManifest
+> Task :app:mergeDebugResources
 > Task :app:javaPreCompileDebug
 > Task :app:mergeDebugShaders
 > Task :app:compileDebugShaders NO-SOURCE
 > Task :app:generateDebugAssets UP-TO-DATE
 > Task :app:mergeDebugAssets
-> Task :app:compressDebugAssets
 > Task :app:processDebugManifestForPackage
+> Task :app:compressDebugAssets
 > Task :app:checkDebugDuplicateClasses
 > Task :app:desugarDebugFileDependencies
 > Task :app:processDebugResources
@@ -34,16 +34,7 @@ Daemon will be stopped at the end of the build
 > Task :app:writeDebugAppMetadata
 > Task :app:writeDebugSigningConfigVersions
 > Task :app:mergeExtDexDebug
-
 > Task :app:compileDebugKotlin
-e: The daemon has terminated unexpectedly on startup attempt #1 with error code: 0. The daemon process output:
-    1. Kotlin compile daemon is ready
-e: The daemon has terminated unexpectedly on startup attempt #2 with error code: 0. The daemon process output:
-    1. Kotlin compile daemon is ready
-Problems may have occurred during auto-selection of GC. The preferred GC is Parallel GC.
-If the problems persist, try adding the JVM option to the Kotlin daemon JVM arguments: -XX:-UseParallelGC.
-GC auto-selection logic is disabled temporary for the next daemon startup.
-
 > Task :app:compileDebugJavaWithJavac NO-SOURCE
 > Task :app:processDebugJavaRes
 > Task :app:mergeDebugJavaResource
@@ -52,7 +43,7 @@ GC auto-selection logic is disabled temporary for the next daemon startup.
 > Task :app:packageDebug
 > Task :app:createDebugApkListingFileRedirect
 > Task :app:assembleDebug
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build_step-1787165448252.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build_step-1787165507688.json
 
-BUILD SUCCESSFUL in 29s
+BUILD SUCCESSFUL in 24s
 33 actionable tasks: 32 executed, 1 up-to-date
