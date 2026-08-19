@@ -1,0 +1,73 @@
+name: Build WiFi Control Real v2
+
+on:
+  workflow_dispatch:
+  issues:
+    types: [opened]
+
+jobs:
+  android:
+    if: github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-CONTROL-REAL-V2'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wifi-control-real-v1
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build Android
+        working-directory: real-control
+        run: gradle --no-daemon :androidApp:assembleDebug --stacktrace
+      - name: Verify Android package
+        run: |
+          APK=real-control/androidApp/build/outputs/apk/debug/androidApp-debug.apk
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee apk.txt
+          grep -q "package: name='org.sayeh.realwifi'" apk.txt
+          grep -q "versionName='2.0.0-real'" apk.txt
+          unzip -l "$APK" | grep -q 'assets/router_adapter.js'
+          cp "$APK" WiFi-Control-Real-v2-Android.apk
+          sha256sum WiFi-Control-Real-v2-Android.apk > WiFi-Control-Real-v2-Android.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WiFi-Control-Real-v2-Android
+          path: |
+            WiFi-Control-Real-v2-Android.apk
+            WiFi-Control-Real-v2-Android.sha256
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wifi-control-real-v1
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build Windows
+        shell: pwsh
+        run: |
+          dotnet restore real-control/windowsApp/WifiControl.Real.Windows.csproj
+          dotnet publish real-control/windowsApp/WifiControl.Real.Windows.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o dist/WiFiControlReal
+          if (!(Test-Path dist/WiFiControlReal/WiFiControlReal.exe)) { throw 'WiFiControlReal.exe missing' }
+          if (!(Test-Path dist/WiFiControlReal/router_adapter.js)) { throw 'router_adapter.js missing' }
+          Compress-Archive -Path dist/WiFiControlReal/* -DestinationPath WiFi-Control-Real-v2-Windows.zip
+          (Get-FileHash WiFi-Control-Real-v2-Windows.zip -Algorithm SHA256).Hash.ToLower() | Out-File WiFi-Control-Real-v2-Windows.sha256 -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WiFi-Control-Real-v2-Windows
+          path: |
+            WiFi-Control-Real-v2-Windows.zip
+            WiFi-Control-Real-v2-Windows.sha256
