@@ -5,6 +5,9 @@ on:
   issues:
     types: [opened]
 
+permissions:
+  contents: write
+
 jobs:
   android:
     if: github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-CONTROL-REAL-V1'
@@ -27,10 +30,21 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: Build Android
-        working-directory: real-control
-        run: gradle --no-daemon :androidApp:assembleDebug --stacktrace
-      - name: Verify APK
+        shell: bash
         run: |
+          set +e
+          cd real-control
+          gradle --no-daemon :androidApp:assembleDebug --stacktrace > ../android-build.log 2>&1
+          rc=$?
+          cd ..
+          cat android-build.log
+          echo "$rc" > android-exit.txt
+          exit 0
+      - name: Verify APK
+        shell: bash
+        run: |
+          rc=$(cat android-exit.txt)
+          if [ "$rc" != "0" ]; then exit 0; fi
           test -s real-control/androidApp/build/outputs/apk/debug/androidApp-debug.apk
           unzip -t real-control/androidApp/build/outputs/apk/debug/androidApp-debug.apk >/dev/null
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging real-control/androidApp/build/outputs/apk/debug/androidApp-debug.apk | tee android-badging.txt
@@ -39,11 +53,18 @@ jobs:
           cp real-control/androidApp/build/outputs/apk/debug/androidApp-debug.apk WiFi-Control-Real-v1-Android.apk
           sha256sum WiFi-Control-Real-v1-Android.apk > WiFi-Control-Real-v1-Android.sha256
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: WiFi-Control-Real-v1-Android
           path: |
             WiFi-Control-Real-v1-Android.apk
             WiFi-Control-Real-v1-Android.sha256
+            android-build.log
+            android-exit.txt
+          if-no-files-found: ignore
+      - name: Fail if Android compilation failed
+        shell: bash
+        run: test "$(cat android-exit.txt)" = "0"
 
   windows:
     if: github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-CONTROL-REAL-V1'
@@ -59,14 +80,66 @@ jobs:
       - name: Publish Windows x64
         shell: pwsh
         run: |
-          dotnet restore real-control/windowsApp/WifiControl.Real.Windows.csproj
-          dotnet publish real-control/windowsApp/WifiControl.Real.Windows.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o dist/windows
-          if (!(Test-Path dist/windows/WiFiControlReal.exe)) { throw 'Windows exe missing' }
-          Compress-Archive -Path dist/windows/* -DestinationPath WiFi-Control-Real-v1-Windows.zip
-          (Get-FileHash WiFi-Control-Real-v1-Windows.zip -Algorithm SHA256).Hash.ToLower() | Out-File WiFi-Control-Real-v1-Windows.sha256 -Encoding ascii
+          $ErrorActionPreference='Continue'
+          dotnet restore real-control/windowsApp/WifiControl.Real.Windows.csproj *>&1 | Tee-Object windows-build.log
+          if ($LASTEXITCODE -ne 0) { $LASTEXITCODE | Out-File windows-exit.txt; exit 0 }
+          dotnet publish real-control/windowsApp/WifiControl.Real.Windows.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o dist/windows *>&1 | Tee-Object -Append windows-build.log
+          $rc=$LASTEXITCODE
+          $rc | Out-File windows-exit.txt
+          if ($rc -eq 0) {
+            if (!(Test-Path dist/windows/WiFiControlReal.exe)) { '9' | Out-File windows-exit.txt; exit 0 }
+            Compress-Archive -Path dist/windows/* -DestinationPath WiFi-Control-Real-v1-Windows.zip
+            (Get-FileHash WiFi-Control-Real-v1-Windows.zip -Algorithm SHA256).Hash.ToLower() | Out-File WiFi-Control-Real-v1-Windows.sha256 -Encoding ascii
+          }
+          exit 0
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: WiFi-Control-Real-v1-Windows
           path: |
             WiFi-Control-Real-v1-Windows.zip
             WiFi-Control-Real-v1-Windows.sha256
+            windows-build.log
+            windows-exit.txt
+          if-no-files-found: ignore
+      - name: Fail if Windows compilation failed
+        shell: pwsh
+        run: |
+          if ((Get-Content windows-exit.txt).Trim() -ne '0') { exit 1 }
+
+  publish:
+    if: always() && (github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-CONTROL-REAL-V1')
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: WiFi-Control-Real-v1-Android
+          path: out/android
+        continue-on-error: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: WiFi-Control-Real-v1-Windows
+          path: out/windows
+        continue-on-error: true
+      - name: Publish outputs and logs
+        shell: bash
+        run: |
+          cp out/android/android-build.log ./wifi-control-real-v1-android-build.log 2>/dev/null || true
+          cp out/android/android-exit.txt ./wifi-control-real-v1-android-exit.txt 2>/dev/null || echo 99 > wifi-control-real-v1-android-exit.txt
+          cp out/windows/windows-build.log ./wifi-control-real-v1-windows-build.log 2>/dev/null || true
+          cp out/windows/windows-exit.txt ./wifi-control-real-v1-windows-exit.txt 2>/dev/null || echo 99 > wifi-control-real-v1-windows-exit.txt
+          cp out/android/WiFi-Control-Real-v1-Android.apk ./WiFi-Control-Real-v1-Android.apk 2>/dev/null || true
+          cp out/android/WiFi-Control-Real-v1-Android.sha256 ./WiFi-Control-Real-v1-Android.sha256 2>/dev/null || true
+          cp out/windows/WiFi-Control-Real-v1-Windows.zip ./WiFi-Control-Real-v1-Windows.zip 2>/dev/null || true
+          cp out/windows/WiFi-Control-Real-v1-Windows.sha256 ./WiFi-Control-Real-v1-Windows.sha256 2>/dev/null || true
+          echo "$GITHUB_RUN_ID" > wifi-control-real-v1-run.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -f wifi-control-real-v1-* WiFi-Control-Real-v1-* 2>/dev/null || true
+          git commit -m 'Publish WiFi Control Real v1 build results' || true
+          git push origin main || true
