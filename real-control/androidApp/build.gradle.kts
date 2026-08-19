@@ -10,6 +10,7 @@ android {
         versionCode = 1
         versionName = "1.0.0-real"
     }
+    sourceSets.getByName("main").assets.srcDir("../shared")
     compileOptions { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
     kotlinOptions { jvmTarget = "1.8" }
 }
