@@ -2,6 +2,7 @@ package org.sayeh.wificontrol
 
 import android.annotation.SuppressLint
 import android.app.AlertDialog
+import android.content.Intent
 import android.os.Bundle
 import android.util.Base64
 import android.view.ViewGroup
@@ -54,8 +55,18 @@ class MainActivity : AppCompatActivity() {
         updateProtectedStatus()
         findViewById<Button>(R.id.testBtn).setOnClickListener { testReadOnly() }
         findViewById<Button>(R.id.scanBtn).setOnClickListener { scanClients() }
-        findViewById<Button>(R.id.openStatus).setOnClickListener { web.loadUrl(urlFor("/rpSys.html")) }
-        findViewById<Button>(R.id.openAdmin).setOnClickListener { web.loadUrl(baseUrl()) }
+        findViewById<Button>(R.id.openStatus).setOnClickListener { openRouter(urlFor("/rpSys.html")) }
+        findViewById<Button>(R.id.openAdmin).setOnClickListener { openRouter(baseUrl()) }
+    }
+
+    private fun openRouter(startUrl: String) {
+        val intent = Intent(this, RouterActivity::class.java).apply {
+            putExtra("baseUrl", baseUrl())
+            putExtra("startUrl", startUrl)
+            putExtra("user", username.text.toString())
+            putExtra("pass", password.text.toString())
+        }
+        startActivity(intent)
     }
 
     private fun baseUrl(): String {
