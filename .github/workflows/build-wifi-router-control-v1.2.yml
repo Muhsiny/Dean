@@ -1,15 +1,13 @@
-# trigger v1.2 build
 name: Build WiFi Router Control APK v1.2
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/build-wifi-router-control-v1.2.yml'
   workflow_dispatch:
+  issues:
+    types: [opened]
 
 jobs:
   build:
+    if: github.event_name == 'workflow_dispatch' || github.event.issue.title == 'TRIGGER-WIFI-CONTROL-V1.2'
     runs-on: ubuntu-latest
     permissions:
       contents: write
