@@ -21,31 +21,14 @@ Daemon will be stopped at the end of the build
 > Task :app:checkDebugAarMetadata
 > Task :app:mapDebugSourceSetPaths
 > Task :app:generateDebugResources
-> Task :app:packageDebugResources
-> Task :app:createDebugCompatibleScreenManifests
-> Task :app:extractDeepLinksDebug
-> Task :app:parseDebugLocalResources
-> Task :app:processDebugMainManifest
-> Task :app:mergeDebugResources
-> Task :app:processDebugManifest
-> Task :app:javaPreCompileDebug
-> Task :app:mergeDebugShaders
-> Task :app:compileDebugShaders NO-SOURCE
-> Task :app:generateDebugAssets UP-TO-DATE
-> Task :app:mergeDebugAssets
-> Task :app:compressDebugAssets
-> Task :app:checkDebugDuplicateClasses
-> Task :app:desugarDebugFileDependencies
 
-> Task :core:compileKotlin
+> Task :core:compileKotlin FAILED
 e: file:///home/runner/work/Dean/Dean/core/src/main/kotlin/org/sayeh/wificontrol/core/RouterCore.kt:304:52 Unresolved reference 'toHttpUrlOrNull'.
 e: file:///home/runner/work/Dean/Dean/core/src/main/kotlin/org/sayeh/wificontrol/core/RouterCore.kt:306:50 No value passed for parameter 'name'.
 e: file:///home/runner/work/Dean/Dean/core/src/main/kotlin/org/sayeh/wificontrol/core/RouterCore.kt:306:53 Unresolved reference 'build'.
 
-> Task :core:compileKotlin FAILED
-> Task :app:processDebugManifestForPackage
-> Task :app:mergeExtDexDebug
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build_step-1787167902061.json
+> Task :app:mergeDebugResources
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build_step-1787168009208.json
 
 FAILURE: Build failed with an exception.
 
@@ -249,5 +232,5 @@ Caused by: org.jetbrains.kotlin.gradle.tasks.CompilationErrorException: Compilat
 	... 2 more
 
 
-BUILD FAILED in 1m 59s
-20 actionable tasks: 20 executed
+BUILD FAILED in 1m 27s
+6 actionable tasks: 6 executed
