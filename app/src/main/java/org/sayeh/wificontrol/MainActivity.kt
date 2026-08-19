@@ -33,6 +33,8 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.scanBtn).setOnClickListener { openEngine("sync") }
         findViewById<Button>(R.id.calibrateBtn).setOnClickListener { openProfiler() }
+        findViewById<Button>(R.id.usageBtn).setOnClickListener { openEngine("usage") }
+        findViewById<Button>(R.id.guestBtn).setOnClickListener { openEngine("guest_probe") }
         findViewById<Button>(R.id.antiQrBtn).setOnClickListener { enableAntiQr() }
         findViewById<Button>(R.id.antiQrOffBtn).setOnClickListener { disableAntiQr() }
         findViewById<Button>(R.id.emergencyBtn).setOnClickListener { emergencyDisableFilter() }
@@ -60,7 +62,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun openEngine(action: String, targetMac: String? = null, allowedMacs: Set<String>? = null) {
         if (!credentialsReady()) return
-        val intent = Intent(this, RouterActivity::class.java).apply {
+        val intent = Intent(this, RouterNativeActivity::class.java).apply {
             putExtra("baseUrl", baseUrl())
             putExtra("user", username.text.toString().trim())
             putExtra("pass", password.text.toString())
@@ -97,7 +99,12 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.emergencyBtn).isEnabled = controlReady
 
         val message = prefs.getString("router_last_message", null)
-        status.text = message ?: if (known.isEmpty()) "آماده — ابتدا نقشه واقعی firmware را استخراج کن." else "${online.size} دستگاه آنلاین • ${known.size} دستگاه ثبت‌شده${if (!controlReady) " • کنترل تغییر‌دهنده هنوز قفل است" else ""}"
+        val firmware = prefs.getString("firmware_version", null)
+        status.text = message ?: if (known.isEmpty()) {
+            "آماده — «اتصال + Verify کنترل واقعی» را بزن."
+        } else {
+            "${online.size} دستگاه آنلاین • ${known.size} دستگاه ثبت‌شده${if (firmware.isNullOrBlank()) "" else " • $firmware"}${if (!controlReady) " • کنترل تغییر‌دهنده هنوز Verify نشده" else " • موتور کنترل Verify شده"}"
+        }
         renderClients(known.toList(), online, blocked, allowed, controlReady)
     }
 
@@ -115,7 +122,7 @@ class MainActivity : AppCompatActivity() {
 
         if (ordered.isEmpty()) {
             clientList.addView(TextView(this).apply {
-                text = "هنوز دستگاهی خوانده نشده است. «اتصال و تازه‌سازی دستگاه‌های واقعی» را بزن."
+                text = "هنوز دستگاهی خوانده نشده است. «اتصال + Verify کنترل واقعی» را بزن."
                 setPadding(0, dp(12), 0, dp(12))
             })
             updateProtectedStatus()
@@ -189,11 +196,11 @@ class MainActivity : AppCompatActivity() {
                     text = if (isBlocked) "وصل‌کردن دوباره" else "قطع واقعی"
                     isEnabled = controlReady && protectedMac != null && !antiQr
                     setOnClickListener {
-                        val action = if (isBlocked) "unblock" else "block"
+                        val selectedAction = if (isBlocked) "unblock" else "block"
                         AlertDialog.Builder(this@MainActivity)
                             .setTitle(if (isBlocked) "وصل‌کردن دوباره؟" else "قطع واقعی این دستگاه؟")
-                            .setMessage("MAC: $mac\nفرمان فقط روی endpoint و فیلدهای Verify‌شده همین firmware اجرا می‌شود و بعد از SAVE دوباره از خود روتر خوانده می‌شود.")
-                            .setPositiveButton("اجرا") { _, _ -> openEngine(action, targetMac = mac) }
+                            .setMessage("MAC: $mac\nفرمان مستقیماً روی /basic/home_wlan.htm اجرا می‌شود و فقط پس از SAVE و خواندن مجدد وضعیت از خود روتر موفق شمرده می‌شود.")
+                            .setPositiveButton("اجرا") { _, _ -> openEngine(selectedAction, targetMac = mac) }
                             .setNegativeButton("لغو", null)
                             .show()
                     }
@@ -224,7 +231,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun enableAntiQr() {
         if (!prefs.getBoolean("control_ready", false)) {
-            status.text = "کنترل تغییر‌دهنده هنوز فعال نیست. اول فایل Firmware Map همین روتر باید تحلیل و endpointها Verify شوند."
+            status.text = "اول اتصال و Verify کنترل واقعی را اجرا کن."
             return
         }
         val owner = prefs.getString("protected_mac", null)?.uppercase(Locale.US)
@@ -236,7 +243,7 @@ class MainActivity : AppCompatActivity() {
         allowed.add(owner)
         AlertDialog.Builder(this)
             .setTitle("ضد QR واقعی فعال شود؟")
-            .setMessage("اپ ظرفیت و فیلدهای واقعی MAC Filter را از firmware Verify‌شده می‌خواند و تلفن مدیر همیشه داخل Allow‑List می‌ماند.")
+            .setMessage("روتر روی Allow Association قرار می‌گیرد و فقط MACهای انتخاب‌شده + تلفن مدیر اجازه اتصال خواهند داشت. نتیجه بعد از SAVE دوباره Verify می‌شود.")
             .setPositiveButton("فعال کن") { _, _ -> openEngine("antiqr_enable", allowedMacs = allowed) }
             .setNegativeButton("لغو", null)
             .show()
@@ -244,12 +251,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun disableAntiQr() {
         if (!prefs.getBoolean("control_ready", false)) {
-            status.text = "کنترل تغییر‌دهنده هنوز فعال نیست."
+            status.text = "کنترل تغییر‌دهنده هنوز Verify نشده است."
             return
         }
         AlertDialog.Builder(this)
             .setTitle("ضد QR خاموش شود؟")
-            .setMessage("MAC Filter از حالت Allow‑List خارج می‌شود و بعد از Verify وضعیت اپ به‌روز می‌شود.")
+            .setMessage("Wireless MAC Filter خاموش و نتیجه از خود روتر Verify می‌شود.")
             .setPositiveButton("خاموش کن") { _, _ -> openEngine("antiqr_disable") }
             .setNegativeButton("لغو", null)
             .show()
@@ -257,7 +264,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun emergencyDisableFilter() {
         if (!prefs.getBoolean("control_ready", false)) {
-            status.text = "بازگردانی تغییر‌دهنده تا زمان Verify firmware قفل است."
+            status.text = "بازگردانی تا زمان Verify کنترل واقعی قفل است."
             return
         }
         AlertDialog.Builder(this)
@@ -271,7 +278,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateProtectedStatus() {
         val mac = prefs.getString("protected_mac", null)
         protectedStatus.text = if (mac.isNullOrBlank()) {
-            "تلفن مدیر هنوز مشخص نشده."
+            "تلفن مدیر هنوز مشخص نشده. قبل از Block یا ضد QR آن را مشخص کن."
         } else {
             "تلفن مدیر محافظت‌شده: $mac"
         }
