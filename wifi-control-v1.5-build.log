@@ -1,13 +1,3 @@
-
-Welcome to Gradle 8.9!
-
-Here are the highlights of this release:
- - Enhanced Error and Warning Messages
- - IDE Integration Improvements
- - Daemon JVM Information
-
-For more details see https://docs.gradle.org/8.9/release-notes.html
-
 To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.9/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
 Daemon will be stopped at the end of the build 
 > Task :app:clean UP-TO-DATE
@@ -20,11 +10,11 @@ Daemon will be stopped at the end of the build
 > Task :app:mapDebugSourceSetPaths
 > Task :app:generateDebugResources
 > Task :app:packageDebugResources
-> Task :app:mergeDebugResources
 > Task :app:createDebugCompatibleScreenManifests
 > Task :app:extractDeepLinksDebug
 > Task :app:parseDebugLocalResources
 > Task :app:processDebugMainManifest
+> Task :app:mergeDebugResources
 > Task :app:processDebugManifest
 > Task :app:processDebugManifestForPackage
 > Task :app:javaPreCompileDebug
@@ -33,9 +23,17 @@ Daemon will be stopped at the end of the build
 > Task :app:generateDebugAssets UP-TO-DATE
 > Task :app:mergeDebugAssets
 > Task :app:compressDebugAssets
-> Task :app:processDebugResources
 > Task :app:checkDebugDuplicateClasses
 > Task :app:desugarDebugFileDependencies
+> Task :app:processDebugResources
+> Task :app:mergeDebugJniLibFolders
+> Task :app:mergeLibDexDebug
+> Task :app:mergeDebugNativeLibs NO-SOURCE
+> Task :app:stripDebugDebugSymbols NO-SOURCE
+> Task :app:validateSigningDebug
+> Task :app:writeDebugAppMetadata
+> Task :app:writeDebugSigningConfigVersions
+> Task :app:mergeExtDexDebug
 
 > Task :app:compileDebugKotlin
 w: file:///home/runner/work/Dean/Dean/app/src/main/java/org/sayeh/wificontrol/RouterActivity.kt:275:18 This declaration overrides a deprecated member but is not marked as deprecated itself. Please add the '@Deprecated' annotation or suppress the diagnostic.
@@ -43,21 +41,13 @@ w: file:///home/runner/work/Dean/Dean/app/src/main/java/org/sayeh/wificontrol/Ro
 
 > Task :app:compileDebugJavaWithJavac NO-SOURCE
 > Task :app:processDebugJavaRes
-> Task :app:mergeLibDexDebug
-> Task :app:dexBuilderDebug
-> Task :app:mergeDebugJniLibFolders
 > Task :app:mergeDebugJavaResource
-> Task :app:mergeDebugNativeLibs NO-SOURCE
-> Task :app:stripDebugDebugSymbols NO-SOURCE
+> Task :app:dexBuilderDebug
 > Task :app:mergeProjectDexDebug
-> Task :app:mergeExtDexDebug
-> Task :app:validateSigningDebug
-> Task :app:writeDebugAppMetadata
-> Task :app:writeDebugSigningConfigVersions
 > Task :app:packageDebug
 > Task :app:createDebugApkListingFileRedirect
 > Task :app:assembleDebug
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build_step-1787162106853.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build_step-1787162261143.json
 
-BUILD SUCCESSFUL in 1m 49s
+BUILD SUCCESSFUL in 30s
 33 actionable tasks: 32 executed, 1 up-to-date
