@@ -25,8 +25,8 @@ Daemon will be stopped at the end of the build
 > Task :app:checkDebugDuplicateClasses
 > Task :app:desugarDebugFileDependencies
 > Task :app:processDebugManifestForPackage
-> Task :app:mergeLibDexDebug
 > Task :app:mergeDebugJniLibFolders
+> Task :app:mergeLibDexDebug
 > Task :app:mergeDebugNativeLibs NO-SOURCE
 > Task :app:stripDebugDebugSymbols NO-SOURCE
 > Task :app:processDebugResources
@@ -43,7 +43,7 @@ Daemon will be stopped at the end of the build
 > Task :app:packageDebug
 > Task :app:createDebugApkListingFileRedirect
 > Task :app:assembleDebug
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build_step-1787163703916.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build_step-1787163763769.json
 
-BUILD SUCCESSFUL in 37s
+BUILD SUCCESSFUL in 30s
 33 actionable tasks: 32 executed, 1 up-to-date
