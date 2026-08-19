@@ -124,3 +124,5 @@ jobs:
         with:
           name: WiFi-Control-v3.0-Windows
           path: WiFi-Control-v3.0-Windows.zip
+
+# rebuild after shared-core URL parsing fix
