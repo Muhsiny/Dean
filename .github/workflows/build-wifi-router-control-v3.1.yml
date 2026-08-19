@@ -1,4 +1,4 @@
-name: Build WiFi Control v3.1 Android + Windows
+name: Build WiFi Control Real v1 via proven CI
 
 on:
   push:
@@ -10,15 +10,15 @@ on:
     types: [opened]
 
 jobs:
-  android-core:
-    if: github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-CONTROL-V3.1'
+  android:
+    if: github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-CONTROL-REAL-V1'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: wifi-router-control
+          ref: wifi-control-real-v1
           fetch-depth: 0
       - uses: actions/setup-java@v4
         with:
@@ -32,93 +32,82 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Compile core, Android and desktop JAR
+      - name: Compile fresh Android app
         id: build_step
         shell: bash
         run: |
           set +e
-          gradle --no-daemon :core:build :app:assembleDebug :desktop:jar --stacktrace > /tmp/wifi-v31-build.log 2>&1
+          cd real-control
+          gradle --no-daemon :androidApp:assembleDebug --stacktrace > /tmp/wifi-real-android.log 2>&1
           rc=$?
-          cat /tmp/wifi-v31-build.log
+          cd ..
+          cat /tmp/wifi-real-android.log
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
           exit 0
-      - name: Verify Android APK and desktop JAR
+      - name: Verify fresh Android APK
         if: steps.build_step.outputs.rc == '0'
+        shell: bash
         run: |
-          test -s app/build/outputs/apk/debug/app-debug.apk
-          test -s desktop/build/libs/desktop.jar
-          unzip -t app/build/outputs/apk/debug/app-debug.apk >/dev/null
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging app/build/outputs/apk/debug/app-debug.apk | tee /tmp/apk.txt
-          grep -q "versionName='3.1.0'" /tmp/apk.txt
-          cp app/build/outputs/apk/debug/app-debug.apk /tmp/WiFi-Control-v3.1-Android.apk
-          cp desktop/build/libs/desktop.jar /tmp/WiFi-Control-v3.1-Desktop.jar
-          sha256sum /tmp/WiFi-Control-v3.1-Android.apk > /tmp/WiFi-Control-v3.1-Android.sha256
-          sha256sum /tmp/WiFi-Control-v3.1-Desktop.jar > /tmp/WiFi-Control-v3.1-Desktop.sha256
+          APK=real-control/androidApp/build/outputs/apk/debug/androidApp-debug.apk
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee /tmp/real-apk.txt
+          grep -q "package: name='org.sayeh.realwifi'" /tmp/real-apk.txt
+          grep -q "versionName='1.0.0-real'" /tmp/real-apk.txt
+          cp "$APK" /tmp/WiFi-Control-Real-v1-Android.apk
+          sha256sum /tmp/WiFi-Control-Real-v1-Android.apk > /tmp/WiFi-Control-Real-v1-Android.sha256
       - uses: actions/upload-artifact@v4
         if: steps.build_step.outputs.rc == '0'
         with:
-          name: WiFi-Control-v3.1-Android
+          name: WiFi-Control-Real-v1-Android
           path: |
-            /tmp/WiFi-Control-v3.1-Android.apk
-            /tmp/WiFi-Control-v3.1-Android.sha256
-      - uses: actions/upload-artifact@v4
-        if: steps.build_step.outputs.rc == '0'
-        with:
-          name: WiFi-Control-v3.1-Desktop-JAR
-          path: |
-            /tmp/WiFi-Control-v3.1-Desktop.jar
-            /tmp/WiFi-Control-v3.1-Desktop.sha256
-      - name: Publish audited build result to main
+            /tmp/WiFi-Control-Real-v1-Android.apk
+            /tmp/WiFi-Control-Real-v1-Android.sha256
+      - name: Publish Android build result to main
         shell: bash
         run: |
           git fetch origin main
           git checkout main
-          cp /tmp/wifi-v31-build.log ./wifi-control-v31-build.log
-          echo "$GITHUB_RUN_ID" > wifi-control-v31-build-run.txt
-          echo "${{ steps.build_step.outputs.rc }}" > wifi-control-v31-build-exit.txt
+          cp /tmp/wifi-real-android.log ./wifi-control-real-v1-android-build.log
+          echo "$GITHUB_RUN_ID" > wifi-control-real-v1-run.txt
+          echo "${{ steps.build_step.outputs.rc }}" > wifi-control-real-v1-android-exit.txt
           if [ "${{ steps.build_step.outputs.rc }}" = "0" ]; then
-            cp /tmp/WiFi-Control-v3.1-Android.apk ./WiFi-Control-v3.1-Android.apk
-            cp /tmp/WiFi-Control-v3.1-Android.sha256 ./WiFi-Control-v3.1-Android.sha256
-            cp /tmp/WiFi-Control-v3.1-Desktop.jar ./WiFi-Control-v3.1-Desktop.jar
-            cp /tmp/WiFi-Control-v3.1-Desktop.sha256 ./WiFi-Control-v3.1-Desktop.sha256
+            cp /tmp/WiFi-Control-Real-v1-Android.apk ./WiFi-Control-Real-v1-Android.apk
+            cp /tmp/WiFi-Control-Real-v1-Android.sha256 ./WiFi-Control-Real-v1-Android.sha256
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -f wifi-control-v31-build.log wifi-control-v31-build-run.txt wifi-control-v31-build-exit.txt
-          if [ "${{ steps.build_step.outputs.rc }}" = "0" ]; then git add -f WiFi-Control-v3.1-Android.apk WiFi-Control-v3.1-Android.sha256 WiFi-Control-v3.1-Desktop.jar WiFi-Control-v3.1-Desktop.sha256; fi
-          git commit -m 'Publish WiFi Control v3.1 audited build result'
+          git add -f wifi-control-real-v1-run.txt wifi-control-real-v1-android-exit.txt wifi-control-real-v1-android-build.log
+          if [ "${{ steps.build_step.outputs.rc }}" = "0" ]; then git add -f WiFi-Control-Real-v1-Android.apk WiFi-Control-Real-v1-Android.sha256; fi
+          git commit -m 'Publish WiFi Control Real v1 Android build result'
           git push origin main
-      - name: Fail job when compilation failed
+      - name: Fail Android job when compilation failed
         if: steps.build_step.outputs.rc != '0'
         run: exit 1
 
   windows:
-    needs: android-core
-    if: github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-CONTROL-V3.1'
+    needs: android
+    if: github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-CONTROL-REAL-V1'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: wifi-router-control
+          ref: wifi-control-real-v1
           fetch-depth: 0
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-dotnet@v4
         with:
-          distribution: temurin
-          java-version: '17'
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-      - name: Build desktop fat JAR
-        shell: pwsh
-        run: gradle --no-daemon :desktop:jar --stacktrace
-      - name: Package Windows app image
+          dotnet-version: '8.0.x'
+      - name: Build fresh Windows controller
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path dist-input | Out-Null
-          Copy-Item desktop/build/libs/desktop.jar dist-input/WiFiControl.jar
-          jpackage --type app-image --name WiFiControl --input dist-input --main-jar WiFiControl.jar --main-class org.sayeh.wificontrol.desktop.DesktopMainKt --dest dist
-          Compress-Archive -Path dist/WiFiControl/* -DestinationPath WiFi-Control-v3.1-Windows.zip
+          dotnet restore real-control/windowsApp/WifiControl.Real.Windows.csproj
+          dotnet publish real-control/windowsApp/WifiControl.Real.Windows.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o dist/WiFiControlReal
+          if (!(Test-Path dist/WiFiControlReal/WiFiControlReal.exe)) { throw 'WiFiControlReal.exe missing' }
+          Compress-Archive -Path dist/WiFiControlReal/* -DestinationPath WiFi-Control-Real-v1-Windows.zip
+          (Get-FileHash WiFi-Control-Real-v1-Windows.zip -Algorithm SHA256).Hash.ToLower() | Out-File WiFi-Control-Real-v1-Windows.sha256 -Encoding ascii
       - uses: actions/upload-artifact@v4
         with:
-          name: WiFi-Control-v3.1-Windows
-          path: WiFi-Control-v3.1-Windows.zip
+          name: WiFi-Control-Real-v1-Windows
+          path: |
+            WiFi-Control-Real-v1-Windows.zip
+            WiFi-Control-Real-v1-Windows.sha256
