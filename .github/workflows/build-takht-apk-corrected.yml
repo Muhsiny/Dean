@@ -1,4 +1,4 @@
-name: Build Corrected Takht APK
+name: Temporary Build WiFi Control APK
 
 on:
   push:
@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: takhtbeheshti-apk-v2
+          ref: wifi-router-control
           fetch-depth: 0
       - uses: actions/setup-java@v4
         with:
@@ -23,32 +23,34 @@ jobs:
           java-version: '17'
       - uses: android-actions/setup-android@v3
       - name: Install Android SDK
-        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.1'
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Use school logo
+      - name: Build WiFi Control APK
+        shell: bash
         run: |
-          if curl -fL --retry 2 'https://app-61p2x9.v2.appdeploy.ai/resources/school-logo.jpg' -o takht-android/app/src/main/res/drawable/school_logo.jpg; then rm -f takht-android/app/src/main/res/drawable/school_logo.xml; fi
-      - name: Build corrected APK
-        working-directory: takht-android
-        run: gradle --no-daemon assembleDebug
-      - name: Prepare corrected APK
-        run: cp takht-android/app/build/outputs/apk/debug/app-debug.apk /tmp/Madrasah-Mohammadia-Takht-v2.apk
-      - name: Upload corrected APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Madrasah-Mohammadia-Takht-APK-v2
-          path: /tmp/Madrasah-Mohammadia-Takht-v2.apk
-          if-no-files-found: error
-      - name: Publish corrected APK to main
+          set +e
+          gradle --no-daemon assembleDebug --stacktrace > /tmp/wifi-build.log 2>&1
+          code=$?
+          echo "$code" > /tmp/wifi-build-status.txt
+          set -e
+          if [ "$code" -eq 0 ]; then cp app/build/outputs/apk/debug/app-debug.apk /tmp/WiFi-Control-TPLink-TD-W8961N-v1.apk; fi
+      - name: Publish WiFi build result to main
+        if: always()
+        shell: bash
         run: |
           git fetch origin main
           git checkout main
-          cp /tmp/Madrasah-Mohammadia-Takht-v2.apk ./Madrasah-Mohammadia-Takht-v2.apk
-          echo "$GITHUB_RUN_ID" > build-run-main.txt
+          cp /tmp/wifi-build.log ./wifi-control-build.log || true
+          cp /tmp/wifi-build-status.txt ./wifi-control-build-status.txt || true
+          if [ -f /tmp/WiFi-Control-TPLink-TD-W8961N-v1.apk ]; then cp /tmp/WiFi-Control-TPLink-TD-W8961N-v1.apk ./WiFi-Control-TPLink-TD-W8961N-v1.apk; fi
+          echo "$GITHUB_RUN_ID" > wifi-control-build-run.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -f Madrasah-Mohammadia-Takht-v2.apk build-run-main.txt
-          git commit -m 'Publish corrected Takht APK v1.0.1 artifact'
+          git add -f wifi-control-build.log wifi-control-build-status.txt wifi-control-build-run.txt
+          if [ -f WiFi-Control-TPLink-TD-W8961N-v1.apk ]; then git add -f WiFi-Control-TPLink-TD-W8961N-v1.apk; fi
+          git commit -m 'Publish WiFi Control TP-Link build result' || exit 0
           git push origin main
