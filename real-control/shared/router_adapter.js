@@ -1,182 +1,83 @@
 (function(global){
-  'use strict';
-  function txt(e){return ((e&&(e.innerText||e.textContent||e.value||''))+'').replace(/\s+/g,' ').trim();}
-  function lower(e){return txt(e).toLowerCase();}
-  function normMac(v){return ((v||'')+'').trim().replace(/-/g,':').toUpperCase();}
-  function validMac(v){return /^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(normMac(v));}
-  function rowText(e){var r=e&&e.closest?e.closest('tr'):null;return lower(r||e&&e.parentElement||e);}
-  function forms(){return Array.prototype.slice.call(document.forms||[]);}
-  function findSave(form){
-    var es=(form||document).querySelectorAll('input,button'); var best=null,score=-999;
-    for(var i=0;i<es.length;i++){
-      var e=es[i], t=lower(e), n=((e.name||'')+' '+(e.id||'')+' '+(e.getAttribute('onclick')||'')).toLowerCase(), s=0;
-      if(t==='save'||t.indexOf('save')>=0)s+=120;
-      if(t.indexOf('apply')>=0||n.indexOf('apply')>=0)s+=100;
-      if(n.indexOf('save')>=0)s+=80;
-      if(t.indexOf('delete')>=0||t.indexOf('cancel')>=0||t.indexOf('reset')>=0||n.indexOf('delete')>=0)s-=300;
-      if(s>score){score=s;best=e;}
-    }
-    return score>0?best:null;
-  }
-  function clickSave(form){
-    var b=findSave(form);
-    if(b){try{b.click();return {ok:true,method:'button'};}catch(e){}}
-    try{if(form.requestSubmit){form.requestSubmit();return {ok:true,method:'requestSubmit'};}}catch(e){}
-    try{form.submit();return {ok:true,method:'submit'};}catch(e){}
-    return {ok:false,error:'SAVE_NOT_FOUND'};
-  }
-  function findActionSelect(form){
-    var ss=form.querySelectorAll('select');
-    for(var i=0;i<ss.length;i++){
-      var opts=Array.prototype.map.call(ss[i].options||[],function(o){return lower(o);}).join(' | ');
-      if(opts.indexOf('allow association')>=0&&opts.indexOf('deny association')>=0)return ss[i];
-    }
-    return null;
-  }
-  function selectByText(sel,want){
-    want=(want||'').toLowerCase();
-    for(var i=0;i<sel.options.length;i++){
-      if(lower(sel.options[i]).indexOf(want)>=0){sel.selectedIndex=i;sel.value=sel.options[i].value;sel.dispatchEvent(new Event('change',{bubbles:true}));return true;}
-    }
-    return false;
-  }
-  function selectedText(sel){try{return lower(sel.options[sel.selectedIndex]);}catch(e){return '';}}
-  function radioGroups(form){
-    var rs=form.querySelectorAll('input[type=radio]'), g={};
-    for(var i=0;i<rs.length;i++){var n=rs[i].name||('__'+i);(g[n]||(g[n]=[])).push(rs[i]);}
-    return g;
-  }
-  function groupText(group){var all='';for(var i=0;i<group.length;i++)all+=' '+rowText(group[i]);return all.toLowerCase();}
-  function filterActiveGroup(form){
-    var g=radioGroups(form), best=null,score=-1;
-    Object.keys(g).forEach(function(k){var t=groupText(g[k]),s=0;if(t.indexOf('activated')>=0)s+=100;if(t.indexOf('deactivated')>=0)s+=100;if(t.indexOf('active')>=0)s+=20;if(s>score){score=s;best=g[k];}});
-    return score>=100?best:null;
-  }
-  function setGroupState(group,on){
-    if(!group||!group.length)return false;
-    var pick=null;
-    for(var i=0;i<group.length;i++){
-      var t=(rowText(group[i])+' '+(group[i].value||'')).toLowerCase();
-      if(on && t.indexOf('deactivated')<0 && (t.indexOf('activated')>=0||t.indexOf('active')>=0||group[i].value==='1'))pick=group[i];
-      if(!on && (t.indexOf('deactivated')>=0||t.indexOf('inactive')>=0||group[i].value==='0'))pick=group[i];
-    }
-    if(!pick)pick=on?group[0]:group[group.length-1];
-    pick.checked=true; try{pick.click();}catch(e){} try{pick.dispatchEvent(new Event('change',{bubbles:true}));}catch(e){}
-    return true;
-  }
-  function groupEnabled(group){
-    if(!group)return false;
-    for(var i=0;i<group.length;i++)if(group[i].checked){var t=(rowText(group[i])+' '+(group[i].value||'')).toLowerCase();if(t.indexOf('deactivated')>=0||t.indexOf('inactive')>=0||group[i].value==='0')return false;return true;}
-    return false;
-  }
-  function macInputs(form){
-    var es=form.querySelectorAll('input[type=text],input:not([type])'),out=[];
-    for(var i=0;i<es.length;i++){
-      var e=es[i], meta=((e.name||'')+' '+(e.id||'')+' '+rowText(e)).toLowerCase(),v=normMac(e.value);
-      if(meta.indexOf('mac')>=0||validMac(v)||v==='00:00:00:00:00:00')out.push(e);
-    }
-    return out;
-  }
-  function findWirelessForm(){
-    var fs=forms(),best=null,score=-1;
-    for(var i=0;i<fs.length;i++){
-      var f=fs[i],s=0,a=findActionSelect(f); if(a)s+=300;
-      if(lower(f).indexOf('wireless mac address filter')>=0)s+=250;
-      var mi=macInputs(f);s+=Math.min(mi.length,20)*8;
-      if(s>score){score=s;best=f;}
-    }
-    return score>=250?best:null;
-  }
-  function wirelessState(){
-    var f=findWirelessForm(); if(!f)return {ok:false,error:'WIRELESS_FILTER_FORM_NOT_FOUND',url:location.href};
-    var a=findActionSelect(f),g=filterActiveGroup(f),ins=macInputs(f),ms=[];
-    for(var i=0;i<ins.length;i++){var m=normMac(ins[i].value);if(validMac(m)&&m!=='00:00:00:00:00:00')ms.push(m);}
-    return {ok:true,url:location.href,formAction:f.action||'',enabled:groupEnabled(g),mode:a?selectedText(a):'',capacity:ins.length,macs:ms};
-  }
-  function setMacValue(e,v){e.value=v;try{e.dispatchEvent(new Event('input',{bubbles:true}));}catch(x){}try{e.dispatchEvent(new Event('change',{bubbles:true}));}catch(x){}}
-  function prepareBlock(mac){
-    mac=normMac(mac);if(!validMac(mac))return {ok:false,error:'INVALID_MAC'};
-    var f=findWirelessForm();if(!f)return {ok:false,error:'WIRELESS_FILTER_FORM_NOT_FOUND'};
-    var a=findActionSelect(f),g=filterActiveGroup(f),ins=macInputs(f);if(!a||!g||!ins.length)return {ok:false,error:'WIRELESS_FILTER_CONTROLS_INCOMPLETE'};
-    setGroupState(g,true);var mode=selectedText(a);
-    if(mode.indexOf('allow association')>=0){
-      var found=false;for(var i=0;i<ins.length;i++)if(normMac(ins[i].value)===mac){setMacValue(ins[i],'00:00:00:00:00:00');found=true;}
-      return {ok:true,needsSave:found,mode:'allow',effect:'block',message:found?'removed-from-allow-list':'already-blocked'};
-    }
-    if(mode.indexOf('deny association')<0){if(!selectByText(a,'deny association'))return {ok:false,error:'DENY_MODE_NOT_AVAILABLE'};}
-    for(var j=0;j<ins.length;j++)if(normMac(ins[j].value)===mac)return {ok:true,needsSave:false,mode:'deny',effect:'block',message:'already-blocked'};
-    for(var k=0;k<ins.length;k++){var v=normMac(ins[k].value);if(!v||v==='00:00:00:00:00:00'){setMacValue(ins[k],mac);return {ok:true,needsSave:true,mode:'deny',effect:'block',message:'ready'};}}
-    return {ok:false,error:'NO_EMPTY_MAC_SLOT'};
-  }
-  function prepareUnblock(mac){
-    mac=normMac(mac);if(!validMac(mac))return {ok:false,error:'INVALID_MAC'};
-    var f=findWirelessForm();if(!f)return {ok:false,error:'WIRELESS_FILTER_FORM_NOT_FOUND'};
-    var a=findActionSelect(f),g=filterActiveGroup(f),ins=macInputs(f);if(!a||!g||!ins.length)return {ok:false,error:'WIRELESS_FILTER_CONTROLS_INCOMPLETE'};
-    setGroupState(g,true);var mode=selectedText(a);
-    if(mode.indexOf('allow association')>=0){
-      for(var i=0;i<ins.length;i++)if(normMac(ins[i].value)===mac)return {ok:true,needsSave:false,mode:'allow',effect:'unblock',message:'already-allowed'};
-      for(var j=0;j<ins.length;j++){var v=normMac(ins[j].value);if(!v||v==='00:00:00:00:00:00'){setMacValue(ins[j],mac);return {ok:true,needsSave:true,mode:'allow',effect:'unblock',message:'ready'};}}
-      return {ok:false,error:'NO_EMPTY_MAC_SLOT'};
-    }
-    if(mode.indexOf('deny association')<0){if(!selectByText(a,'deny association'))return {ok:false,error:'DENY_MODE_NOT_AVAILABLE'};}
-    var changed=false;for(var k=0;k<ins.length;k++)if(normMac(ins[k].value)===mac){setMacValue(ins[k],'00:00:00:00:00:00');changed=true;}
-    return {ok:true,needsSave:changed,mode:'deny',effect:'unblock',message:changed?'ready':'already-allowed'};
-  }
-  function prepareAllowList(macs){
-    var wanted=(macs||[]).map(normMac).filter(validMac);wanted=Array.from(new Set(wanted));
-    var f=findWirelessForm();if(!f)return {ok:false,error:'WIRELESS_FILTER_FORM_NOT_FOUND'};
-    var a=findActionSelect(f),g=filterActiveGroup(f),ins=macInputs(f);if(!a||!g||!ins.length)return {ok:false,error:'WIRELESS_FILTER_CONTROLS_INCOMPLETE'};
-    if(wanted.length>ins.length)return {ok:false,error:'ALLOW_LIST_CAPACITY',capacity:ins.length,requested:wanted.length};
-    setGroupState(g,true);if(!selectByText(a,'allow association'))return {ok:false,error:'ALLOW_MODE_NOT_AVAILABLE'};
-    for(var i=0;i<ins.length;i++)setMacValue(ins[i],wanted[i]||'00:00:00:00:00:00');
-    return {ok:true,needsSave:true,capacity:ins.length,count:wanted.length};
-  }
-  function prepareFilterOff(){var f=findWirelessForm();if(!f)return {ok:false,error:'WIRELESS_FILTER_FORM_NOT_FOUND'};var g=filterActiveGroup(f);if(!g)return {ok:false,error:'ACTIVE_CONTROL_NOT_FOUND'};setGroupState(g,false);return {ok:true,needsSave:true};}
-  function saveWireless(){var f=findWirelessForm();if(!f)return {ok:false,error:'WIRELESS_FILTER_FORM_NOT_FOUND'};return clickSave(f);}
-  function isBlocked(mac){
-    mac=normMac(mac);var s=wirelessState();if(!s.ok||!s.enabled)return false;
-    if(s.mode.indexOf('allow association')>=0)return s.macs.indexOf(mac)<0;
-    if(s.mode.indexOf('deny association')>=0)return s.macs.indexOf(mac)>=0;
-    return false;
-  }
-  function scanClients(routerMac){
-    routerMac=normMac(routerMac||'');var re=/\b(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}\b/ig,best=[],bestScore=-1;
-    var tables=document.querySelectorAll('table');
-    for(var i=0;i<tables.length;i++){
-      var rows=tables[i].querySelectorAll('tr'),arr=[];
-      for(var r=0;r<rows.length;r++){
-        var line=txt(rows[r]),ms=line.match(re)||[];
-        if(ms.length){var m=normMac(ms[0]);if(validMac(m)&&m!==routerMac)arr.push({mac:m,row:line});}
-      }
-      var near='';var p=tables[i];for(var d=0;d<4&&p;d++,p=p.parentElement)near+=' '+lower(p);
-      var score=arr.length*20+(near.indexOf('current connected wireless clients')>=0?300:0);
-      if(score>bestScore){bestScore=score;best=arr;}
-    }
-    var out=[],seen={};for(var j=0;j<best.length;j++){if(!seen[best[j].mac]){seen[best[j].mac]=1;out.push(best[j]);}}
-    return {ok:true,url:location.href,clients:out};
-  }
-  function scanStats(){
-    var t=txt(document.body), nums={};
-    function capture(label,key){var re=new RegExp(label+'\\s*[:：]?\\s*([0-9,]+)','i'),m=t.match(re);if(m)nums[key]=parseInt(m[1].replace(/,/g,''),10);}
-    capture('Receive\\s+(?:total\\s+)?Bytes','rxBytes');capture('Transmit\\s+(?:total\\s+)?Bytes','txBytes');capture('Rx\\s+Bytes','rxBytes');capture('Tx\\s+Bytes','txBytes');
-    return {ok:true,url:location.href,rxBytes:nums.rxBytes==null?null:nums.rxBytes,txBytes:nums.txBytes==null?null:nums.txBytes,text:t.slice(0,12000)};
-  }
-  function guestForm(){var fs=forms(),best=null,score=-1;for(var i=0;i<fs.length;i++){var t=lower(fs[i]),s=0;if(t.indexOf('guest network')>=0)s+=300;if(t.indexOf('upstream')>=0||t.indexOf('downstream')>=0)s+=50;if(s>score){score=s;best=fs[i];}}return score>=300?best:null;}
-  function scanGuest(){
-    var f=guestForm();if(!f)return {ok:false,error:'GUEST_FORM_NOT_FOUND'};var fields=[];var es=f.querySelectorAll('input,select');
-    for(var i=0;i<es.length;i++){fields.push({name:es[i].name||'',type:es[i].type||es[i].tagName,value:es[i].value||'',checked:!!es[i].checked,row:rowText(es[i])});}
-    return {ok:true,url:location.href,formAction:f.action||'',fields:fields};
-  }
-  function setGuestEnabled(on){
-    var f=guestForm();if(!f)return {ok:false,error:'GUEST_FORM_NOT_FOUND'};var g=radioGroups(f),pickGroup=null;
-    Object.keys(g).some(function(k){var t=groupText(g[k]);if(t.indexOf('guest')>=0&&(t.indexOf('enable')>=0||t.indexOf('active')>=0)){pickGroup=g[k];return true;}return false;});
-    if(!pickGroup)return {ok:false,error:'GUEST_ENABLE_CONTROL_NOT_FOUND'};setGroupState(pickGroup,on);return {ok:true,needsSave:true};
-  }
-  function setGuestBandwidth(up,down){
-    var f=guestForm();if(!f)return {ok:false,error:'GUEST_FORM_NOT_FOUND'};var es=f.querySelectorAll('input[type=text],input[type=number]'),u=null,d=null;
-    for(var i=0;i<es.length;i++){var m=((es[i].name||'')+' '+(es[i].id||'')+' '+rowText(es[i])).toLowerCase();if(!u&&m.indexOf('upstream')>=0)u=es[i];if(!d&&m.indexOf('downstream')>=0)d=es[i];}
-    if(!u&&!d)return {ok:false,error:'GUEST_BANDWIDTH_FIELDS_NOT_FOUND'};if(u&&up!=null)u.value=String(up);if(d&&down!=null)d.value=String(down);return {ok:true,needsSave:true,upstream:!!u,downstream:!!d};
-  }
-  function saveGuest(){var f=guestForm();if(!f)return {ok:false,error:'GUEST_FORM_NOT_FOUND'};return clickSave(f);}
-  global.RouterAdapter={version:'1.0.0',normMac:normMac,scanClients:scanClients,wirelessState:wirelessState,prepareBlock:prepareBlock,prepareUnblock:prepareUnblock,prepareAllowList:prepareAllowList,prepareFilterOff:prepareFilterOff,saveWireless:saveWireless,isBlocked:isBlocked,scanStats:scanStats,scanGuest:scanGuest,setGuestEnabled:setGuestEnabled,setGuestBandwidth:setGuestBandwidth,saveGuest:saveGuest};
+'use strict';
+
+function arr(x){return Array.prototype.slice.call(x||[]);}
+function txt(e){return ((e&&(e.innerText||e.textContent||e.value||''))+'').replace(/\s+/g,' ').trim();}
+function lower(e){return txt(e).toLowerCase();}
+function normMac(v){return ((v||'')+'').trim().replace(/-/g,':').toUpperCase();}
+function validMac(v){return /^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(normMac(v));}
+function rowOf(e){return e&&e.closest?e.closest('tr'):null;}
+function rowText(e){return lower(rowOf(e)||e&&e.parentElement||e);}
+function forms(){return arr(document.forms);}
+function meta(e){return (((e&&e.name)||'')+' '+((e&&e.id)||'')+' '+rowText(e)).toLowerCase();}
+function optionText(sel){return arr(sel&&sel.options).map(function(o){return lower(o);}).join(' | ');}
+function selectedText(sel){try{return lower(sel.options[sel.selectedIndex]);}catch(e){return '';}}
+function setValue(e,v){if(!e)return false;e.value=v;try{e.dispatchEvent(new Event('input',{bubbles:true}));}catch(x){}try{e.dispatchEvent(new Event('change',{bubbles:true}));}catch(x){}return true;}
+function selectByText(sel,wants){
+  if(!sel)return false;if(typeof wants==='string')wants=[wants];wants=(wants||[]).map(function(x){return x.toLowerCase();});
+  for(var w=0;w<wants.length;w++)for(var i=0;i<sel.options.length;i++)if(lower(sel.options[i]).indexOf(wants[w])>=0){sel.selectedIndex=i;sel.value=sel.options[i].value;try{sel.dispatchEvent(new Event('change',{bubbles:true}));}catch(e){}return true;}
+  return false;
+}
+function selectFirstUseful(sel,preferred){if(!sel)return false;if(preferred&&selectByText(sel,preferred))return true;for(var i=0;i<sel.options.length;i++){var t=lower(sel.options[i]);if(t&&t!=='none'&&t!=='n/a'&&t!=='--'&&t.indexOf('select')<0){sel.selectedIndex=i;sel.value=sel.options[i].value;try{sel.dispatchEvent(new Event('change',{bubbles:true}));}catch(e){}return true;}}return false;}
+function radioGroups(scope){var rs=(scope||document).querySelectorAll('input[type=radio]'),g={};for(var i=0;i<rs.length;i++){var n=rs[i].name||('__'+i);(g[n]||(g[n]=[])).push(rs[i]);}return g;}
+function groupText(group){return (group||[]).map(function(e){return rowText(e)+' '+(e.value||'');}).join(' ').toLowerCase();}
+function choiceText(c){if(!c)return '';if(c.kind==='select')return selectedText(c.el);if(c.kind==='radio'){for(var i=0;i<c.group.length;i++)if(c.group[i].checked)return (rowText(c.group[i])+' '+(c.group[i].value||'')).toLowerCase();}if(c.kind==='checkbox')return c.el.checked?'on':'off';return '';}
+function setChoice(c,wants){if(!c)return false;if(typeof wants==='string')wants=[wants];wants=(wants||[]).map(function(x){return x.toLowerCase();});if(c.kind==='select')return selectByText(c.el,wants);if(c.kind==='radio'){for(var w=0;w<wants.length;w++)for(var i=0;i<c.group.length;i++){var t=(rowText(c.group[i])+' '+(c.group[i].value||'')).toLowerCase();if(t.indexOf(wants[w])>=0){c.group[i].checked=true;try{c.group[i].click();}catch(e){}try{c.group[i].dispatchEvent(new Event('change',{bubbles:true}));}catch(e){}return true;}}}if(c.kind==='checkbox'){var on=wants.some(function(x){return x==='on'||x==='yes'||x==='enable'||x==='enabled'||x==='activated'||x==='1';});c.el.checked=on;try{c.el.dispatchEvent(new Event('change',{bubbles:true}));}catch(e){}return true;}return false;}
+function findChoice(scope,labelTerms,optionTerms){scope=scope||document;labelTerms=(labelTerms||[]).map(function(x){return x.toLowerCase();});optionTerms=(optionTerms||[]).map(function(x){return x.toLowerCase();});var ss=scope.querySelectorAll('select'),best=null,bestScore=-1;for(var i=0;i<ss.length;i++){var m=meta(ss[i]),o=optionText(ss[i]),s=0;labelTerms.forEach(function(x){if(m.indexOf(x)>=0)s+=30;});optionTerms.forEach(function(x){if(o.indexOf(x)>=0)s+=70;});if(s>bestScore){bestScore=s;best={kind:'select',el:ss[i]};}}var gs=radioGroups(scope);Object.keys(gs).forEach(function(k){var t=groupText(gs[k]),s=0;labelTerms.forEach(function(x){if(t.indexOf(x)>=0)s+=30;});optionTerms.forEach(function(x){if(t.indexOf(x)>=0)s+=70;});if(s>bestScore){bestScore=s;best={kind:'radio',group:gs[k]};}});var cbs=scope.querySelectorAll('input[type=checkbox]');for(var j=0;j<cbs.length;j++){var cm=meta(cbs[j]),cs=0;labelTerms.forEach(function(x){if(cm.indexOf(x)>=0)cs+=50;});if(cs>bestScore){bestScore=cs;best={kind:'checkbox',el:cbs[j]};}}return bestScore>0?best:null;}
+function findInput(scope,terms,opts){scope=scope||document;terms=(terms||[]).map(function(x){return x.toLowerCase();});opts=opts||{};var es=scope.querySelectorAll('input[type=text],input[type=password],input[type=number],input:not([type])'),best=null,score=-1;for(var i=0;i<es.length;i++){var m=meta(es[i]),s=0;terms.forEach(function(x){if(m.indexOf(x)>=0)s+=60;});if(opts.exclude)(opts.exclude||[]).forEach(function(x){if(m.indexOf(x.toLowerCase())>=0)s-=100;});if(s>score){score=s;best=es[i];}}return score>0?best:null;}
+function findSave(form){var es=(form||document).querySelectorAll('input,button'),best=null,score=-999;for(var i=0;i<es.length;i++){var e=es[i],t=lower(e),n=((e.name||'')+' '+(e.id||'')+' '+(e.getAttribute('onclick')||'')).toLowerCase(),s=0;if(t==='save'||t.indexOf('save')>=0)s+=150;if(t.indexOf('apply')>=0||n.indexOf('apply')>=0)s+=100;if(n.indexOf('save')>=0)s+=80;if(t.indexOf('delete')>=0||t.indexOf('cancel')>=0||t.indexOf('reset')>=0||t.indexOf('reboot')>=0||n.indexOf('delete')>=0)s-=400;if(s>score){score=s;best=e;}}return score>0?best:null;}
+function clickSave(form){var b=findSave(form);if(b){try{b.click();return {ok:true,method:'button',name:b.name||'',value:b.value||txt(b)};}catch(e){}}try{if(form.requestSubmit){form.requestSubmit();return {ok:true,method:'requestSubmit'};}}catch(e){}try{form.submit();return {ok:true,method:'submit'};}catch(e){}return {ok:false,error:'SAVE_NOT_FOUND'};}
+function numericOptions(sel){var out=[];if(!sel)return out;for(var i=0;i<sel.options.length;i++){var t=txt(sel.options[i]),n=parseInt(t,10);if(!isNaN(n))out.push({n:n,value:sel.options[i].value,text:t});}return out;}
+function findSelectByRow(scope,terms){scope=scope||document;var ss=scope.querySelectorAll('select'),best=null,score=-1;terms=(terms||[]).map(function(x){return x.toLowerCase();});for(var i=0;i<ss.length;i++){var m=meta(ss[i]),s=0;terms.forEach(function(x){if(m.indexOf(x)>=0)s+=50;});if(s>score){score=s;best=ss[i];}}return score>0?best:null;}
+function setSelectNumeric(sel,n){if(!sel)return false;for(var i=0;i<sel.options.length;i++){var t=parseInt(txt(sel.options[i]),10);if(t===n){sel.selectedIndex=i;sel.value=sel.options[i].value;try{sel.dispatchEvent(new Event('change',{bubbles:true}));}catch(e){}return true;}}return false;}
+function usedRulePairs(scope){var rows=(scope||document).querySelectorAll('tr'),out=[];for(var i=0;i<rows.length;i++){var macs=txt(rows[i]).match(/\b(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}\b/i);if(!macs)continue;var cells=arr(rows[i].querySelectorAll('td')).map(function(x){return txt(x);});var nums=[];for(var c=0;c<cells.length;c++){var m=cells[c].match(/^\s*(\d+)\s*$/);if(m)nums.push(parseInt(m[1],10));if(nums.length>=2)break;}out.push({set:nums.length>1?nums[0]:null,rule:nums.length?nums[nums.length-1]:null,mac:normMac(macs[0]),text:txt(rows[i])});}return out;}
+function chooseFreePair(setSel,ruleSel,used){var sets=numericOptions(setSel),rules=numericOptions(ruleSel);if(!sets.length)sets=[{n:1}];if(!rules.length)rules=[{n:1}];for(var si=sets.length-1;si>=0;si--)for(var ri=rules.length-1;ri>=0;ri--){var s=sets[si].n,r=rules[ri].n;if(!(used||[]).some(function(x){return x.set===s&&x.rule===r;}))return {set:s,rule:r};}return null;}
+
+function discoverNavigation(){var links=document.querySelectorAll('a'),routes={};for(var i=0;i<links.length;i++){var label=txt(links[i]);if(!label)continue;var raw=links[i].getAttribute('href')||'';var oc=links[i].getAttribute('onclick')||'';var m=oc.match(/(?:top\.main\.location\s*=\s*)?["']([^"']+\.htm[l]?)["']/i);var u=m?m[1]:raw;try{routes[label.toLowerCase()]=new URL(u,location.href).pathname;}catch(e){routes[label.toLowerCase()]=u;}}return {ok:Object.keys(routes).length>0,url:location.href,routes:routes};}
+
+function scanClients(routerMac){routerMac=normMac(routerMac||'');var re=/\b(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}\b/ig,best=[],bestScore=-1;var tables=document.querySelectorAll('table');for(var i=0;i<tables.length;i++){var rows=tables[i].querySelectorAll('tr'),items=[];for(var r=0;r<rows.length;r++){var line=txt(rows[r]),ms=line.match(re)||[];if(ms.length){var m=normMac(ms[0]);if(validMac(m)&&m!==routerMac)items.push({mac:m,row:line});}}var near='';var p=tables[i];for(var d=0;d<4&&p;d++,p=p.parentElement)near+=' '+lower(p);var score=items.length*20+(near.indexOf('current connected wireless clients')>=0?300:0)+(near.indexOf('wireless')>=0?50:0);if(score>bestScore){bestScore=score;best=items;}}var out=[],seen={};for(var j=0;j<best.length;j++)if(!seen[best[j].mac]){seen[best[j].mac]=1;out.push(best[j]);}return {ok:true,url:location.href,clients:out};}
+
+function sectionRows(form,heading){var rows=arr(form.querySelectorAll('tr')),start=-1;heading=heading.toLowerCase();for(var i=0;i<rows.length;i++){var t=lower(rows[i]);if(t.indexOf(heading)>=0){start=i;break;}}if(start<0)return rows;var out=[];for(var j=start;j<rows.length;j++){var t2=lower(rows[j]);if(j>start&&out.length>2&&rows[j].querySelectorAll('input,select,button').length===0&&/settings|filter|network|performance|wps|wds|access point/.test(t2)&&t2.indexOf(heading)<0)break;out.push(rows[j]);}return out;}
+function scopeFromRows(rows,form){return {querySelectorAll:function(sel){var out=[];(rows||[]).forEach(function(r){out=out.concat(arr(r.querySelectorAll(sel)));});return out;},querySelector:function(sel){var a=this.querySelectorAll(sel);return a.length?a[0]:null;},_form:form};}
+
+function wirelessContext(){var fs=forms(),best=null,bestScore=-1;for(var i=0;i<fs.length;i++){var f=fs[i],rows=sectionRows(f,'wireless mac address filter'),sc=scopeFromRows(rows,f),s=0;var all=lower(f);if(all.indexOf('wireless mac address filter')>=0)s+=300;var action=findChoice(sc,['action'],['allow association','deny association']);if(action)s+=300;var active=findChoice(sc,['active'],['activated','deactivated','yes','no']);if(active)s+=120;var mis=sc.querySelectorAll('input[type=text],input:not([type])').filter(function(e){var m=meta(e),v=normMac(e.value);return (m.indexOf('mac')>=0||validMac(v)||v==='00:00:00:00:00:00')&&m.indexOf('wds')<0&&m.indexOf('bssid')<0;});s+=Math.min(mis.length,20)*12;if(s>bestScore){bestScore=s;best={form:f,scope:sc,action:action,active:active,macInputs:mis};}}return bestScore>=260?best:null;}
+function wirelessState(){var c=wirelessContext();if(!c)return {ok:false,error:'WIRELESS_FILTER_CONTROLS_NOT_FOUND',url:location.href};var ms=[];c.macInputs.forEach(function(e){var m=normMac(e.value);if(validMac(m)&&m!=='00:00:00:00:00:00')ms.push(m);});var mode=choiceText(c.action);var activeText=choiceText(c.active);var enabled=activeText.indexOf('deactivated')<0&&activeText.indexOf('inactive')<0&&activeText.indexOf('no')<0&&activeText!=='0'&&activeText!=='';return {ok:!!c.action&&!!c.active&&c.macInputs.length>0,url:location.href,formAction:c.form.action||'',enabled:enabled,mode:mode,capacity:c.macInputs.length,macs:ms,wps:wpsState()};}
+function setMacValue(e,v){return setValue(e,v);}
+function prepareBlock(mac){mac=normMac(mac);if(!validMac(mac))return {ok:false,error:'INVALID_MAC'};var c=wirelessContext();if(!c||!c.action||!c.active||!c.macInputs.length)return {ok:false,error:'WIRELESS_FILTER_CONTROLS_INCOMPLETE'};setChoice(c.active,['activated','yes','on','enable']);var mode=choiceText(c.action);if(mode.indexOf('allow association')>=0){var found=false;c.macInputs.forEach(function(e){if(normMac(e.value)===mac){setMacValue(e,'00:00:00:00:00:00');found=true;}});return {ok:true,needsSave:found,mode:'allow',message:found?'removed-from-allow-list':'already-blocked'};}if(mode.indexOf('deny association')<0&&!setChoice(c.action,['deny association']))return {ok:false,error:'DENY_MODE_NOT_AVAILABLE'};for(var i=0;i<c.macInputs.length;i++)if(normMac(c.macInputs[i].value)===mac)return {ok:true,needsSave:false,mode:'deny',message:'already-blocked'};for(var j=0;j<c.macInputs.length;j++){var v=normMac(c.macInputs[j].value);if(!v||v==='00:00:00:00:00:00'){setMacValue(c.macInputs[j],mac);return {ok:true,needsSave:true,mode:'deny',message:'ready'};}}return {ok:false,error:'NO_EMPTY_MAC_SLOT'};}
+function prepareUnblock(mac){mac=normMac(mac);if(!validMac(mac))return {ok:false,error:'INVALID_MAC'};var c=wirelessContext();if(!c||!c.action||!c.active||!c.macInputs.length)return {ok:false,error:'WIRELESS_FILTER_CONTROLS_INCOMPLETE'};setChoice(c.active,['activated','yes','on','enable']);var mode=choiceText(c.action);if(mode.indexOf('allow association')>=0){for(var i=0;i<c.macInputs.length;i++)if(normMac(c.macInputs[i].value)===mac)return {ok:true,needsSave:false,mode:'allow',message:'already-allowed'};for(var j=0;j<c.macInputs.length;j++){var v=normMac(c.macInputs[j].value);if(!v||v==='00:00:00:00:00:00'){setMacValue(c.macInputs[j],mac);return {ok:true,needsSave:true,mode:'allow',message:'ready'};}}return {ok:false,error:'NO_EMPTY_MAC_SLOT'};}if(mode.indexOf('deny association')<0&&!setChoice(c.action,['deny association']))return {ok:false,error:'DENY_MODE_NOT_AVAILABLE'};var changed=false;c.macInputs.forEach(function(e){if(normMac(e.value)===mac){setMacValue(e,'00:00:00:00:00:00');changed=true;}});return {ok:true,needsSave:changed,mode:'deny',message:changed?'ready':'already-allowed'};}
+function prepareAllowList(macs){var wanted=(macs||[]).map(normMac).filter(validMac);wanted=Array.from(new Set(wanted));var c=wirelessContext();if(!c||!c.action||!c.active||!c.macInputs.length)return {ok:false,error:'WIRELESS_FILTER_CONTROLS_INCOMPLETE'};if(wanted.length>c.macInputs.length)return {ok:false,error:'ALLOW_LIST_CAPACITY',capacity:c.macInputs.length,requested:wanted.length};setChoice(c.active,['activated','yes','on','enable']);if(!setChoice(c.action,['allow association']))return {ok:false,error:'ALLOW_MODE_NOT_AVAILABLE'};for(var i=0;i<c.macInputs.length;i++)setMacValue(c.macInputs[i],wanted[i]||'00:00:00:00:00:00');return {ok:true,needsSave:true,capacity:c.macInputs.length,count:wanted.length};}
+function prepareFilterOff(){var c=wirelessContext();if(!c||!c.active)return {ok:false,error:'WIRELESS_FILTER_CONTROLS_INCOMPLETE'};if(!setChoice(c.active,['deactivated','no','off','disable']))return {ok:false,error:'DEACTIVATE_NOT_AVAILABLE'};return {ok:true,needsSave:true};}
+function saveWireless(){var c=wirelessContext();return c?clickSave(c.form):{ok:false,error:'WIRELESS_FILTER_CONTROLS_NOT_FOUND'};}
+function isBlocked(mac){mac=normMac(mac);var s=wirelessState();if(!s.ok||!s.enabled)return false;if(s.mode.indexOf('allow association')>=0)return s.macs.indexOf(mac)<0;if(s.mode.indexOf('deny association')>=0)return s.macs.indexOf(mac)>=0;return false;}
+function wpsContext(){var fs=forms();for(var i=0;i<fs.length;i++){var rows=sectionRows(fs[i],'wps'),sc=scopeFromRows(rows,fs[i]),c=findChoice(sc,['wps'],['activated','deactivated','on','off','yes','no','enable','disable']);if(c)return {form:fs[i],choice:c};}return null;}
+function wpsState(){var c=wpsContext();if(!c)return {supported:false};var t=choiceText(c.choice);return {supported:true,enabled:!(t.indexOf('deactivated')>=0||t.indexOf('disabled')>=0||t.indexOf('off')>=0||t.indexOf('no')>=0||t==='0')};}
+function prepareWps(on){var c=wpsContext();if(!c)return {ok:false,error:'WPS_CONTROL_NOT_FOUND'};var ok=setChoice(c.choice,on?['activated','enable','enabled','on','yes']:['deactivated','disable','disabled','off','no']);return ok?{ok:true,needsSave:true}:{ok:false,error:'WPS_VALUE_NOT_FOUND'};}
+
+function guestContext(){var fs=forms(),best=null,score=-1;for(var i=0;i<fs.length;i++){var f=fs[i],all=lower(f),s=0;if(all.indexOf('guest network')>=0)s+=300;if(all.indexOf('upstream')>=0||all.indexOf('downstream')>=0)s+=80;if(all.indexOf('guest network isolation')>=0)s+=60;if(s>score){score=s;best=f;}}return score>=150?best:null;}
+function guestState(){var f=guestContext();if(!f)return {ok:false,error:'GUEST_FORM_NOT_FOUND'};var enabled=findChoice(f,['guest network','active','enable'],['activated','deactivated','enable','disable','on','off','yes','no']);var iso=findChoice(f,['guest network isolation','isolation'],['enable','disable','on','off','yes','no']);var local=findChoice(f,['allow guests to access local network','local network'],['enable','disable','on','off','yes','no']);var ssid=findInput(f,['ssid'],{});var pass=findInput(f,['wireless password','password'],{});var up=findInput(f,['upstream'],{}),down=findInput(f,['downstream'],{});return {ok:true,url:location.href,enabled:enabled?choiceText(enabled):'',isolation:iso?choiceText(iso):'',localAccess:local?choiceText(local):'',ssid:ssid?ssid.value:'',hasPassword:!!pass,upstream:up?up.value:null,downstream:down?down.value:null,capabilities:{enable:!!enabled,isolation:!!iso,localAccess:!!local,ssid:!!ssid,password:!!pass,bandwidth:!!(up||down)}};}
+function prepareGuestEnabled(on){var f=guestContext();if(!f)return {ok:false,error:'GUEST_FORM_NOT_FOUND'};var c=findChoice(f,['guest network','active','enable'],['activated','deactivated','enable','disable','on','off','yes','no']);return c&&setChoice(c,on?['activated','enable','on','yes']:['deactivated','disable','off','no'])?{ok:true,needsSave:true}:{ok:false,error:'GUEST_ENABLE_CONTROL_NOT_FOUND'};}
+function prepareGuestBandwidth(up,down){var f=guestContext();if(!f)return {ok:false,error:'GUEST_FORM_NOT_FOUND'};var u=findInput(f,['upstream'],{}),d=findInput(f,['downstream'],{});if(!u&&!d)return {ok:false,error:'GUEST_BANDWIDTH_FIELDS_NOT_FOUND'};if(u&&up!=null)setValue(u,String(up));if(d&&down!=null)setValue(d,String(down));return {ok:true,needsSave:true,upstream:!!u,downstream:!!d};}
+function prepareGuestIsolation(on){var f=guestContext();if(!f)return {ok:false,error:'GUEST_FORM_NOT_FOUND'};var c=findChoice(f,['guest network isolation','isolation'],['enable','disable','on','off','yes','no']);return c&&setChoice(c,on?['enable','on','yes','activated']:['disable','off','no','deactivated'])?{ok:true,needsSave:true}:{ok:false,error:'GUEST_ISOLATION_CONTROL_NOT_FOUND'};}
+function prepareGuestLocalAccess(on){var f=guestContext();if(!f)return {ok:false,error:'GUEST_FORM_NOT_FOUND'};var c=findChoice(f,['allow guests to access local network','local network'],['enable','disable','on','off','yes','no']);return c&&setChoice(c,on?['enable','on','yes','activated']:['disable','off','no','deactivated'])?{ok:true,needsSave:true}:{ok:false,error:'GUEST_LOCAL_ACCESS_CONTROL_NOT_FOUND'};}
+function prepareGuestCredentials(ssid,password){var f=guestContext();if(!f)return {ok:false,error:'GUEST_FORM_NOT_FOUND'};var s=findInput(f,['ssid'],{}),p=findInput(f,['wireless password','password'],{});if(!s)return {ok:false,error:'GUEST_SSID_NOT_FOUND'};if(ssid!=null&&String(ssid).trim())setValue(s,String(ssid).trim());if(password!=null&&String(password).length){if(!p)return {ok:false,error:'GUEST_PASSWORD_NOT_FOUND'};setValue(p,String(password));}return {ok:true,needsSave:true};}
+function saveGuest(){var f=guestContext();return f?clickSave(f):{ok:false,error:'GUEST_FORM_NOT_FOUND'};}
+
+function accessContext(){var fs=forms(),best=null,bestScore=-1;for(var i=0;i<fs.length;i++){var f=fs[i],all=lower(f),score=0;var filterType=findChoice(f,['filter type'],['ip/mac filter','application filter','url filter']);if(filterType)score+=180;var ruleType=findChoice(f,['rule type'],['mac','ip']);if(ruleType)score+=180;var mac=findInput(f,['mac address'],{exclude:['source','destination']});if(mac)score+=160;if(all.indexOf('ip/mac filter')>=0)score+=120;if(all.indexOf('rule unmatched')>=0)score+=40;if(score>bestScore){bestScore=score;best={form:f,filterType:filterType,ruleType:ruleType,mac:mac};}}if(bestScore<250)return null;var f=best.form;best.setIndex=findSelectByRow(f,['filter set index','set index']);best.ruleIndex=findSelectByRow(f,['filter rule index','rule index']);best.iface=findChoice(f,['interface'],[]);best.direction=findChoice(f,['direction'],['outgoing','incoming','both']);best.active=findChoice(f,['active'],['yes','no','activated','deactivated']);best.unmatched=findChoice(f,['rule unmatched','unmatched'],['next','forward']);best.used=usedRulePairs(document);return best;}
+function accessState(){var c=accessContext();if(!c)return {ok:false,error:'ACCESS_MAC_FILTER_NOT_FOUND',url:location.href};var rows=usedRulePairs(document);return {ok:!!c.ruleType&&!!c.mac&&!!c.active,url:location.href,formAction:c.form.action||'',rules:rows,capacity:{sets:numericOptions(c.setIndex).map(function(x){return x.n;}),rules:numericOptions(c.ruleIndex).map(function(x){return x.n;})}};}
+function prepareInternetBlock(mac){mac=normMac(mac);if(!validMac(mac))return {ok:false,error:'INVALID_MAC'};var c=accessContext();if(!c||!c.ruleType||!c.mac||!c.active)return {ok:false,error:'ACCESS_MAC_FILTER_INCOMPLETE'};var existing=c.used.filter(function(x){return x.mac===mac;})[0];var pair=existing||chooseFreePair(c.setIndex,c.ruleIndex,c.used);if(!pair)return {ok:false,error:'NO_EMPTY_ACCESS_FILTER_SLOT'};if(c.filterType&&!setChoice(c.filterType,['ip/mac filter']))return {ok:false,error:'FILTER_TYPE_NOT_AVAILABLE'};if(!setChoice(c.ruleType,['mac']))return {ok:false,error:'MAC_RULE_TYPE_NOT_AVAILABLE'};if(c.setIndex&&pair.set!=null)setSelectNumeric(c.setIndex,pair.set);if(c.ruleIndex&&pair.rule!=null)setSelectNumeric(c.ruleIndex,pair.rule);if(c.iface)selectFirstUseful(c.iface,['pvc0','internet','wan']);if(c.direction)setChoice(c.direction,['outgoing','both']);if(!setChoice(c.active,['yes','activated','on','enable']))return {ok:false,error:'ACTIVE_YES_NOT_AVAILABLE'};if(c.unmatched)setChoice(c.unmatched,['next']);setValue(c.mac,mac);return {ok:true,needsSave:true,set:pair.set,rule:pair.rule,mac:mac};}
+function prepareInternetUnblock(mac){mac=normMac(mac);if(!validMac(mac))return {ok:false,error:'INVALID_MAC'};var c=accessContext();if(!c||!c.ruleType||!c.active)return {ok:false,error:'ACCESS_MAC_FILTER_INCOMPLETE'};var existing=c.used.filter(function(x){return x.mac===mac;})[0];if(!existing)return {ok:true,needsSave:false,message:'not-listed'};if(c.filterType)setChoice(c.filterType,['ip/mac filter']);setChoice(c.ruleType,['mac']);if(c.setIndex&&existing.set!=null)setSelectNumeric(c.setIndex,existing.set);if(c.ruleIndex&&existing.rule!=null)setSelectNumeric(c.ruleIndex,existing.rule);setChoice(c.active,['no','deactivated','off','disable']);if(c.mac)setValue(c.mac,mac);return {ok:true,needsSave:true,set:existing.set,rule:existing.rule,mac:mac};}
+function saveAccess(){var c=accessContext();return c?clickSave(c.form):{ok:false,error:'ACCESS_MAC_FILTER_NOT_FOUND'};}
+function isInternetBlocked(mac){mac=normMac(mac);var rows=usedRulePairs(document).filter(function(x){return x.mac===mac;});if(!rows.length)return false;for(var i=0;i<rows.length;i++){var t=rows[i].text.toLowerCase();if(t.indexOf(' no ')<0&&t.indexOf(' deactivated')<0&&t.indexOf(' inactive')<0)return true;}return false;}
+
+function qosContext(){var fs=forms(),best=null,bestScore=-1;for(var i=0;i<fs.length;i++){var f=fs[i],all=lower(f),score=0;if(all.indexOf('qos')>=0)score+=160;if(all.indexOf('queue')>=0)score+=100;var src=findInput(f,['source mac'],{});if(src)score+=180;var q=findChoice(f,['queue'],[]);if(q)score+=100;if(score>bestScore){bestScore=score;best={form:f,sourceMac:src,queue:q};}}if(bestScore<260)return null;var f=best.form;best.ruleIndex=findSelectByRow(f,['rule index']);best.active=findChoice(f,['active'],['yes','no','activated','deactivated']);best.qosEnable=findChoice(f,['qos'],['activated','deactivated','enable','disable']);best.used=usedRulePairs(document);return best;}
+function qosState(){var c=qosContext();if(!c)return {ok:false,error:'QOS_FORM_NOT_FOUND',url:location.href};var qs=[];if(c.queue&&c.queue.kind==='select')qs=arr(c.queue.el.options).map(function(o){return txt(o);});return {ok:!!c.sourceMac&&!!c.queue&&!!c.active,url:location.href,queues:qs,rules:c.used};}
+function pickQueue(c,level){if(!c||!c.queue)return false;if(c.queue.kind!=='select')return setChoice(c.queue,[level]);var sel=c.queue.el,opts=arr(sel.options);if(!opts.length)return false;var wants=level==='high'?['highest','high','priority 1','queue 1']:level==='low'?['lowest','low','priority 4','queue 4']:['normal','medium','priority 2','queue 2'];if(selectByText(sel,wants))return true;var idx=level==='high'?0:level==='low'?opts.length-1:Math.floor((opts.length-1)/2);sel.selectedIndex=idx;sel.value=opts[idx].value;try{sel.dispatchEvent(new Event('change',{bubbles:true}));}catch(e){}return true;}
+function prepareQos(mac,level){mac=normMac(mac);level=(level||'normal').toLowerCase();if(!validMac(mac))return {ok:false,error:'INVALID_MAC'};var c=qosContext();if(!c||!c.sourceMac||!c.queue||!c.active)return {ok:false,error:'QOS_CONTROLS_INCOMPLETE'};var existing=c.used.filter(function(x){return x.mac===mac;})[0];var rules=numericOptions(c.ruleIndex),usedRuleNums=c.used.map(function(x){return x.rule;}).filter(function(x){return x!=null;});var rule=existing&&existing.rule!=null?existing.rule:null;if(rule==null){for(var i=rules.length-1;i>=0;i--)if(usedRuleNums.indexOf(rules[i].n)<0){rule=rules[i].n;break;}}if(rule==null&&rules.length)rule=rules[rules.length-1].n;if(c.ruleIndex&&rule!=null)setSelectNumeric(c.ruleIndex,rule);if(c.qosEnable)setChoice(c.qosEnable,['activated','enable','on','yes']);setChoice(c.active,['yes','activated','on','enable']);setValue(c.sourceMac,mac);if(!pickQueue(c,level))return {ok:false,error:'QOS_QUEUE_NOT_AVAILABLE'};return {ok:true,needsSave:true,rule:rule,level:level};}
+function prepareQosOff(mac){mac=normMac(mac);var c=qosContext();if(!c||!c.active)return {ok:false,error:'QOS_CONTROLS_INCOMPLETE'};var ex=c.used.filter(function(x){return x.mac===mac;})[0];if(!ex)return {ok:true,needsSave:false};if(c.ruleIndex&&ex.rule!=null)setSelectNumeric(c.ruleIndex,ex.rule);setChoice(c.active,['no','deactivated','off','disable']);if(c.sourceMac)setValue(c.sourceMac,mac);return {ok:true,needsSave:true};}
+function saveQos(){var c=qosContext();return c?clickSave(c.form):{ok:false,error:'QOS_FORM_NOT_FOUND'};}
+
+function scanStats(){var t=txt(document.body),nums={};function capture(label,key){var re=new RegExp(label+'\\s*[:：]?\\s*([0-9,]+)','i'),m=t.match(re);if(m)nums[key]=parseInt(m[1].replace(/,/g,''),10);}capture('Receive\\s+(?:total\\s+)?Bytes','rxBytes');capture('Transmit\\s+(?:total\\s+)?Bytes','txBytes');capture('Rx\\s+Bytes','rxBytes');capture('Tx\\s+Bytes','txBytes');return {ok:true,url:location.href,rxBytes:nums.rxBytes==null?null:nums.rxBytes,txBytes:nums.txBytes==null?null:nums.txBytes,text:t.slice(0,12000)};}
+function probePage(){return {ok:true,url:location.href,navigation:discoverNavigation(),wireless:wirelessState(),guest:guestState(),access:accessState(),qos:qosState(),stats:scanStats()};}
+
+global.RouterAdapter={version:'2.0.0',normMac:normMac,validMac:validMac,discoverNavigation:discoverNavigation,probePage:probePage,scanClients:scanClients,wirelessState:wirelessState,prepareBlock:prepareBlock,prepareUnblock:prepareUnblock,prepareAllowList:prepareAllowList,prepareFilterOff:prepareFilterOff,saveWireless:saveWireless,isBlocked:isBlocked,wpsState:wpsState,prepareWps:prepareWps,guestState:guestState,scanGuest:guestState,prepareGuestEnabled:prepareGuestEnabled,setGuestEnabled:prepareGuestEnabled,prepareGuestBandwidth:prepareGuestBandwidth,setGuestBandwidth:prepareGuestBandwidth,prepareGuestIsolation:prepareGuestIsolation,prepareGuestLocalAccess:prepareGuestLocalAccess,prepareGuestCredentials:prepareGuestCredentials,saveGuest:saveGuest,accessState:accessState,prepareInternetBlock:prepareInternetBlock,prepareInternetUnblock:prepareInternetUnblock,saveAccess:saveAccess,isInternetBlocked:isInternetBlocked,qosState:qosState,prepareQos:prepareQos,prepareQosOff:prepareQosOff,saveQos:saveQos,scanStats:scanStats};
 })(window);
