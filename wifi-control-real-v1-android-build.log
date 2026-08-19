@@ -5,7 +5,7 @@ Daemon will be stopped at the end of the build
 > Task :androidApp:mergeDebugNativeDebugMetadata NO-SOURCE
 > Task :androidApp:checkKotlinGradlePluginConfigurationErrors SKIPPED
 > Task :androidApp:checkDebugAarMetadata FAILED
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build_step-1787175635274.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build_step-1787175637537.json
 
 FAILURE: Build failed with an exception.
 
@@ -268,5 +268,5 @@ The following AndroidX dependencies are detected:
 	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractManagedExecutor.java:48)
 
 
-BUILD FAILED in 15s
+BUILD FAILED in 11s
 1 actionable task: 1 executed
