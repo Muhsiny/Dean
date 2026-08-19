@@ -1,4 +1,4 @@
-name: Build WiFi Control v3.0 Android + Windows
+name: Build WiFi Control v3.1 Android + Windows
 
 on:
   push:
@@ -11,7 +11,7 @@ on:
 
 jobs:
   android-and-core:
-    if: github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-CONTROL-V3.0'
+    if: github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-CONTROL-V3.1'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -37,9 +37,9 @@ jobs:
         shell: bash
         run: |
           set +e
-          gradle --no-daemon :core:build :app:assembleDebug :desktop:jar --stacktrace > /tmp/wifi-v3-build.log 2>&1
+          gradle --no-daemon :core:build :app:assembleDebug :desktop:jar --stacktrace > /tmp/wifi-v31-build.log 2>&1
           rc=$?
-          cat /tmp/wifi-v3-build.log
+          cat /tmp/wifi-v31-build.log
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
           exit 0
       - name: Verify Android APK and desktop JAR
@@ -49,46 +49,44 @@ jobs:
           test -s desktop/build/libs/desktop.jar
           unzip -t app/build/outputs/apk/debug/app-debug.apk >/dev/null
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging app/build/outputs/apk/debug/app-debug.apk | tee /tmp/apk.txt
-          grep -q "versionName='3.0.0'" /tmp/apk.txt
-          cp app/build/outputs/apk/debug/app-debug.apk /tmp/WiFi-Control-v3.0-Android.apk
-          sha256sum /tmp/WiFi-Control-v3.0-Android.apk > /tmp/WiFi-Control-v3.0-Android.sha256
-          cp desktop/build/libs/desktop.jar /tmp/WiFi-Control-v3.0-Desktop.jar
-          sha256sum /tmp/WiFi-Control-v3.0-Desktop.jar > /tmp/WiFi-Control-v3.0-Desktop.sha256
-      - name: Upload Android APK
+          grep -q "versionName='3.1.0'" /tmp/apk.txt
+          cp app/build/outputs/apk/debug/app-debug.apk /tmp/WiFi-Control-v3.1-Android.apk
+          sha256sum /tmp/WiFi-Control-v3.1-Android.apk > /tmp/WiFi-Control-v3.1-Android.sha256
+          cp desktop/build/libs/desktop.jar /tmp/WiFi-Control-v3.1-Desktop.jar
+          sha256sum /tmp/WiFi-Control-v3.1-Desktop.jar > /tmp/WiFi-Control-v3.1-Desktop.sha256
+      - uses: actions/upload-artifact@v4
         if: steps.build_step.outputs.rc == '0'
-        uses: actions/upload-artifact@v4
         with:
-          name: WiFi-Control-v3.0-Android
+          name: WiFi-Control-v3.1-Android
           path: |
-            /tmp/WiFi-Control-v3.0-Android.apk
-            /tmp/WiFi-Control-v3.0-Android.sha256
-      - name: Upload Desktop JAR
+            /tmp/WiFi-Control-v3.1-Android.apk
+            /tmp/WiFi-Control-v3.1-Android.sha256
+      - uses: actions/upload-artifact@v4
         if: steps.build_step.outputs.rc == '0'
-        uses: actions/upload-artifact@v4
         with:
-          name: WiFi-Control-v3.0-Desktop-JAR
+          name: WiFi-Control-v3.1-Desktop-JAR
           path: |
-            /tmp/WiFi-Control-v3.0-Desktop.jar
-            /tmp/WiFi-Control-v3.0-Desktop.sha256
-      - name: Publish v3 build status to main
+            /tmp/WiFi-Control-v3.1-Desktop.jar
+            /tmp/WiFi-Control-v3.1-Desktop.sha256
+      - name: Publish audited v3.1 status to main
         shell: bash
         run: |
           git fetch origin main
           git checkout main
-          cp /tmp/wifi-v3-build.log ./wifi-control-v3-build.log
-          echo "$GITHUB_RUN_ID" > wifi-control-v3-build-run.txt
-          echo "${{ steps.build_step.outputs.rc }}" > wifi-control-v3-build-exit.txt
+          cp /tmp/wifi-v31-build.log ./wifi-control-v31-build.log
+          echo "$GITHUB_RUN_ID" > wifi-control-v31-build-run.txt
+          echo "${{ steps.build_step.outputs.rc }}" > wifi-control-v31-build-exit.txt
           if [ "${{ steps.build_step.outputs.rc }}" = "0" ]; then
-            cp /tmp/WiFi-Control-v3.0-Android.apk ./WiFi-Control-v3.0-Android.apk
-            cp /tmp/WiFi-Control-v3.0-Android.sha256 ./WiFi-Control-v3.0-Android.sha256
-            cp /tmp/WiFi-Control-v3.0-Desktop.jar ./WiFi-Control-v3.0-Desktop.jar
-            cp /tmp/WiFi-Control-v3.0-Desktop.sha256 ./WiFi-Control-v3.0-Desktop.sha256
+            cp /tmp/WiFi-Control-v3.1-Android.apk ./WiFi-Control-v3.1-Android.apk
+            cp /tmp/WiFi-Control-v3.1-Android.sha256 ./WiFi-Control-v3.1-Android.sha256
+            cp /tmp/WiFi-Control-v3.1-Desktop.jar ./WiFi-Control-v3.1-Desktop.jar
+            cp /tmp/WiFi-Control-v3.1-Desktop.sha256 ./WiFi-Control-v3.1-Desktop.sha256
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -f wifi-control-v3-build.log wifi-control-v3-build-run.txt wifi-control-v3-build-exit.txt
-          if [ "${{ steps.build_step.outputs.rc }}" = "0" ]; then git add -f WiFi-Control-v3.0-Android.apk WiFi-Control-v3.0-Android.sha256 WiFi-Control-v3.0-Desktop.jar WiFi-Control-v3.0-Desktop.sha256; fi
-          git commit -m 'Publish WiFi Control v3 cross-platform build result'
+          git add -f wifi-control-v31-build.log wifi-control-v31-build-run.txt wifi-control-v31-build-exit.txt
+          if [ "${{ steps.build_step.outputs.rc }}" = "0" ]; then git add -f WiFi-Control-v3.1-Android.apk WiFi-Control-v3.1-Android.sha256 WiFi-Control-v3.1-Desktop.jar WiFi-Control-v3.1-Desktop.sha256; fi
+          git commit -m 'Publish WiFi Control v3.1 audited build result'
           git push origin main
       - name: Fail if compilation failed
         if: steps.build_step.outputs.rc != '0'
@@ -96,7 +94,6 @@ jobs:
 
   windows:
     needs: android-and-core
-    if: github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-CONTROL-V3.0'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -113,16 +110,14 @@ jobs:
       - name: Build desktop fat JAR
         shell: pwsh
         run: gradle --no-daemon :desktop:jar --stacktrace
-      - name: Package Windows native app image
+      - name: Package Windows app image
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist-input | Out-Null
           Copy-Item desktop/build/libs/desktop.jar dist-input/WiFiControl.jar
           jpackage --type app-image --name WiFiControl --input dist-input --main-jar WiFiControl.jar --main-class org.sayeh.wificontrol.desktop.DesktopMainKt --dest dist
-          Compress-Archive -Path dist/WiFiControl/* -DestinationPath WiFi-Control-v3.0-Windows.zip
+          Compress-Archive -Path dist/WiFiControl/* -DestinationPath WiFi-Control-v3.1-Windows.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: WiFi-Control-v3.0-Windows
-          path: WiFi-Control-v3.0-Windows.zip
-
-# exact TD-W8961N V4 firmware adapter build 2026-08-20
+          name: WiFi-Control-v3.1-Windows
+          path: WiFi-Control-v3.1-Windows.zip
