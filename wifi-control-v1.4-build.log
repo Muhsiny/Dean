@@ -10,11 +10,11 @@ Daemon will be stopped at the end of the build
 > Task :app:mapDebugSourceSetPaths
 > Task :app:generateDebugResources
 > Task :app:packageDebugResources
+> Task :app:mergeDebugResources
 > Task :app:createDebugCompatibleScreenManifests
 > Task :app:extractDeepLinksDebug
 > Task :app:parseDebugLocalResources
 > Task :app:processDebugMainManifest
-> Task :app:mergeDebugResources
 > Task :app:processDebugManifest
 > Task :app:javaPreCompileDebug
 > Task :app:mergeDebugShaders
@@ -25,8 +25,8 @@ Daemon will be stopped at the end of the build
 > Task :app:checkDebugDuplicateClasses
 > Task :app:desugarDebugFileDependencies
 > Task :app:processDebugManifestForPackage
-> Task :app:mergeLibDexDebug
 > Task :app:mergeDebugJniLibFolders
+> Task :app:mergeLibDexDebug
 > Task :app:mergeDebugNativeLibs NO-SOURCE
 > Task :app:stripDebugDebugSymbols NO-SOURCE
 > Task :app:processDebugResources
@@ -36,6 +36,8 @@ Daemon will be stopped at the end of the build
 > Task :app:mergeExtDexDebug
 
 > Task :app:compileDebugKotlin
+e: The daemon has terminated unexpectedly on startup attempt #1 with error code: 0. The daemon process output:
+    1. Kotlin compile daemon is ready
 w: file:///home/runner/work/Dean/Dean/app/src/main/java/org/sayeh/wificontrol/RouterActivity.kt:475:18 This declaration overrides a deprecated member but is not marked as deprecated itself. Please add the '@Deprecated' annotation or suppress the diagnostic.
 w: file:///home/runner/work/Dean/Dean/app/src/main/java/org/sayeh/wificontrol/RouterActivity.kt:476:54 'fun onBackPressed(): Unit' is deprecated. Deprecated in Java.
 
@@ -47,7 +49,7 @@ w: file:///home/runner/work/Dean/Dean/app/src/main/java/org/sayeh/wificontrol/Ro
 > Task :app:packageDebug
 > Task :app:createDebugApkListingFileRedirect
 > Task :app:assembleDebug
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build_step-1787160740113.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build_step-1787160833918.json
 
-BUILD SUCCESSFUL in 36s
+BUILD SUCCESSFUL in 35s
 33 actionable tasks: 32 executed, 1 up-to-date
