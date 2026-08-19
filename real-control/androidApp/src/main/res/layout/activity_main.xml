@@ -1,73 +1,295 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true">
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="vertical" android:padding="16dp" android:layoutDirection="rtl">
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
 
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="WiFi Control Real" android:textSize="28sp" android:textStyle="bold"/>
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="TP-Link TD-W8961N V4 • Firmware 3.2.0 Build 210914" android:paddingBottom="10dp"/>
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layoutDirection="rtl"
+        android:orientation="vertical"
+        android:padding="16dp">
 
-        <EditText android:id="@+id/routerUrl" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="http://192.168.1.1" android:hint="آدرس روتر" android:inputType="textUri"/>
-        <EditText android:id="@+id/username" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:hint="نام کاربری ادمین" android:inputType="text"/>
-        <EditText android:id="@+id/password" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:hint="رمز ادمین" android:inputType="textPassword"/>
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="WiFi Control Real v2"
+            android:textSize="28sp"
+            android:textStyle="bold" />
 
-        <Button android:id="@+id/connectBtn" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="اتصال و Verify واقعی"/>
-        <Button android:id="@+id/refreshBtn" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="تازه‌سازی دستگاه‌ها" android:enabled="false"/>
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="10dp"
+            android:text="TP-Link TD-W8961N V4 • موتور خودکشف و Verify" />
 
-        <TextView android:id="@+id/status" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="آماده" android:textStyle="bold" android:padding="10dp"/>
-        <TextView android:id="@+id/capabilities" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="قابلیت‌ها هنوز Verify نشده‌اند." android:paddingBottom="8dp"/>
+        <EditText
+            android:id="@+id/routerUrl"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="آدرس روتر"
+            android:inputType="textUri"
+            android:text="http://192.168.1.1" />
 
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="دستگاه‌های متصل" android:textSize="20sp" android:textStyle="bold" android:paddingTop="8dp"/>
-        <LinearLayout android:id="@+id/deviceList" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="vertical"/>
+        <EditText
+            android:id="@+id/username"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="نام کاربری ادمین"
+            android:inputType="text" />
 
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="کنترل دسترسی" android:textSize="20sp" android:textStyle="bold" android:paddingTop="14dp"/>
-        <Button android:id="@+id/allowListBtn" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="ضد QR / Allow‑List دستگاه‌های انتخاب‌شده" android:enabled="false"/>
-        <Button android:id="@+id/filterOffBtn" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="خاموش‌کردن اضطراری MAC Filter" android:enabled="false"/>
+        <EditText
+            android:id="@+id/password"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="رمز ادمین"
+            android:inputType="textPassword" />
 
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="مصرف اینترنت" android:textSize="20sp" android:textStyle="bold" android:paddingTop="14dp"/>
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
-            <EditText android:id="@+id/packageGb" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
-                android:hint="حجم بسته (GB)" android:inputType="numberDecimal"/>
-            <Button android:id="@+id/statsBtn" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:text="خواندن آمار" android:enabled="false"/>
+        <Button
+            android:id="@+id/connectBtn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="اتصال + کشف خودکار + Verify واقعی" />
+
+        <Button
+            android:id="@+id/refreshBtn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:enabled="false"
+            android:text="تازه‌سازی دستگاه‌ها" />
+
+        <TextView
+            android:id="@+id/status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="10dp"
+            android:text="آماده"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/capabilities"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="8dp"
+            android:text="قابلیت‌ها هنوز Verify نشده‌اند." />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="8dp"
+            android:text="دستگاه‌های متصل"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="برای هر دستگاه: نام‌گذاری، مدیر، قطع اینترنت، قطع Wi‑Fi و QoS فقط وقتی firmware همان قابلیت را Verify کند." />
+
+        <LinearLayout
+            android:id="@+id/deviceList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="14dp"
+            android:text="کنترل دسترسی و ضد اشتراک"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/allowListBtn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:enabled="false"
+            android:text="ضد QR / Allow‑List دستگاه‌های انتخاب‌شده" />
+
+        <Button
+            android:id="@+id/wpsOffBtn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:enabled="false"
+            android:text="خاموش‌کردن WPS برای بستن مسیر اتصال دکمه‌ای" />
+
+        <Button
+            android:id="@+id/filterOffBtn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:enabled="false"
+            android:text="بازگردانی اضطراری: خاموش‌کردن Wireless MAC Filter" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="14dp"
+            android:text="مصرف کل اینترنت"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <EditText
+                android:id="@+id/packageGb"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="حجم بسته (GB)"
+                android:inputType="numberDecimal" />
+
+            <Button
+                android:id="@+id/statsBtn"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:enabled="false"
+                android:text="خواندن آمار" />
         </LinearLayout>
-        <TextView android:id="@+id/usageText" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="هنوز خوانده نشده" android:padding="8dp"/>
 
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="Guest Network" android:textSize="20sp" android:textStyle="bold" android:paddingTop="14dp"/>
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
-            <Button android:id="@+id/guestOnBtn" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
-                android:text="فعال" android:enabled="false"/>
-            <Button android:id="@+id/guestOffBtn" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
-                android:text="خاموش" android:enabled="false"/>
+        <TextView
+            android:id="@+id/usageText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="8dp"
+            android:text="هنوز خوانده نشده" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="14dp"
+            android:text="Guest Network — مناسب محصلین"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/guestOnBtn"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:enabled="false"
+                android:text="فعال" />
+
+            <Button
+                android:id="@+id/guestOffBtn"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:enabled="false"
+                android:text="خاموش" />
         </LinearLayout>
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
-            <EditText android:id="@+id/guestUp" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
-                android:hint="Upstream" android:inputType="numberDecimal"/>
-            <EditText android:id="@+id/guestDown" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
-                android:hint="Downstream" android:inputType="numberDecimal"/>
-            <Button android:id="@+id/guestBwBtn" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:text="اعمال" android:enabled="false"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <EditText
+                android:id="@+id/guestUp"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="Upstream"
+                android:inputType="numberDecimal" />
+
+            <EditText
+                android:id="@+id/guestDown"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="Downstream"
+                android:inputType="numberDecimal" />
+
+            <Button
+                android:id="@+id/guestBwBtn"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:enabled="false"
+                android:text="اعمال سقف" />
         </LinearLayout>
 
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="این اپ نتیجه را فقط پس از خواندنِ دوباره از خود روتر موفق ثبت می‌کند. قابلیت غیرقابل‌تشخیص قفل می‌ماند؛ دکمهٔ نمایشی وجود ندارد." android:paddingTop="16dp"/>
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
 
-        <WebView android:id="@+id/routerWeb" android:layout_width="1dp" android:layout_height="1dp" android:alpha="0.01"/>
+            <Button
+                android:id="@+id/guestIsolationOnBtn"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:enabled="false"
+                android:text="Isolation ON" />
+
+            <Button
+                android:id="@+id/guestIsolationOffBtn"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:enabled="false"
+                android:text="Isolation OFF" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/guestLocalOffBtn"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:enabled="false"
+                android:text="بستن دسترسی Guest به LAN" />
+
+            <Button
+                android:id="@+id/guestLocalOnBtn"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:enabled="false"
+                android:text="اجازه دسترسی Guest به LAN" />
+        </LinearLayout>
+
+        <EditText
+            android:id="@+id/guestSsid"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="نام Guest Wi‑Fi (اختیاری)" />
+
+        <EditText
+            android:id="@+id/guestPassword"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="رمز Guest Wi‑Fi (اختیاری)"
+            android:inputType="textPassword" />
+
+        <Button
+            android:id="@+id/guestCredentialsBtn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:enabled="false"
+            android:text="ثبت نام/رمز Guest و Verify" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="16dp"
+            android:text="اصل سیستم: هیچ قابلیت به‌خاطر ظاهر فعال نمی‌شود. مسیرها از منوی واقعی firmware کشف می‌شوند؛ هر SAVE با خواندن مجدد همان صفحه بررسی می‌شود. اگر firmware قابلیتی را ارائه نکند، همان کنترل قفل می‌ماند." />
+
+        <WebView
+            android:id="@+id/routerWeb"
+            android:layout_width="1dp"
+            android:layout_height="1dp"
+            android:alpha="0.01" />
     </LinearLayout>
 </ScrollView>
