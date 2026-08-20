@@ -128,7 +128,7 @@ private class DesktopController : JFrame("WiFi Control Direct v4") {
     private fun allowSelected() {
         val manager = managerField.text.trim().uppercase(Locale.US)
         if (!validMac(manager)) { status.text = "MAC مدیر را درست وارد کن تا خودش قطع نشود."; return }
-        val selected = list.selectedIndices.mapNotNull { clients.getOrNull(it)?.mac }.toMutableSet()
+        val selected = list.selectedIndices.toList().mapNotNull { clients.getOrNull(it)?.mac }.toMutableSet()
         selected.add(manager)
         if (JOptionPane.showConfirmDialog(this, "فقط ${selected.size} MAC اجازه اتصال داشته باشند؟", "Allow-List", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) return
         runAction("در حال ثبت Allow-List…") { router().setAllowList(selected) }
