@@ -13,14 +13,14 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="WiFi Control Direct v4"
+            android:text="WiFi Control Direct v4.1"
             android:textStyle="bold"
             android:textSize="28sp" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="TP-Link TD-W8961N V4 • Direct HTTP Engine • بدون WebView"
+            android:text="TP-Link TD-W8961N V4 • Firmware Login JS + Direct HTTP Control"
             android:textSize="13sp"
             android:paddingBottom="10dp" />
 
@@ -49,7 +49,7 @@
             android:id="@+id/connectBtn"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="اتصال مستقیم به روتر" />
+            android:text="ورود firmware + اتصال مستقیم" />
 
         <Button
             android:id="@+id/refreshBtn"
@@ -71,7 +71,7 @@
             android:id="@+id/capabilities"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="قابلیت‌ها پس از اتصال مستقیم از خود روتر خوانده می‌شوند."
+            android:text="قابلیت‌ها پس از اتصال از خود روتر خوانده می‌شوند."
             android:paddingBottom="8dp" />
 
         <TextView
@@ -143,7 +143,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="قفل ایمنی: MAC روتر و دستگاه مدیر Block نمی‌شوند. هیچ Reboot/Reset/Upgrade/WAN/ADSL در این اپ اجرا نمی‌شود. هر تغییر فقط پس از POST واقعی و بازخوانی مجدد از روتر موفق شمرده می‌شود."
+            android:text="قفل ایمنی: MAC روتر و دستگاه مدیر Block نمی‌شوند. هیچ Reboot/Reset/Upgrade/WAN/ADSL اجرا نمی‌شود. احراز هویت را JavaScript خود firmware انجام می‌دهد؛ کنترل پس از آن مستقیم است."
             android:paddingTop="16dp"
             android:paddingBottom="24dp" />
     </LinearLayout>
