@@ -1,0 +1,102 @@
+name: Build WiFi Control Direct v4
+
+on:
+  workflow_dispatch:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    if: github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-CONTROL-DIRECT-V4'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wifi-control-direct-v4
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install SDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build Android direct v4
+        run: gradle --no-daemon :app:assembleDebug --stacktrace
+      - name: Verify Android package
+        run: |
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee apk.txt
+          grep -q "package: name='org.sayeh.wificontrol'" apk.txt
+          grep -q "versionName='4.0.0-direct'" apk.txt
+          grep -R "WiFi Control Direct v4" app/src/main/res/layout/activity_main.xml
+          grep -R "DirectRouter" app/src/main/java/org/sayeh/wificontrol/MainActivity.kt
+          cp "$APK" WiFi-Control-Direct-v4-Android.apk
+          sha256sum WiFi-Control-Direct-v4-Android.apk > WiFi-Control-Direct-v4-Android.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WiFi-Control-Direct-v4-Android
+          path: |
+            WiFi-Control-Direct-v4-Android.apk
+            WiFi-Control-Direct-v4-Android.sha256
+
+  windows:
+    if: github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-CONTROL-DIRECT-V4'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wifi-control-direct-v4
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build desktop distribution
+        shell: pwsh
+        run: |
+          gradle --no-daemon :desktop:installDist --stacktrace
+          if (!(Test-Path desktop/build/install/desktop/lib)) { throw 'desktop distribution missing' }
+          $cp = (Get-ChildItem desktop/build/install/desktop/lib/*.jar | ForEach-Object { $_.FullName }) -join ';'
+          jpackage --type app-image --name WiFiControlDirectV4 --dest dist --input desktop/build/install/desktop/lib --main-jar desktop.jar --main-class org.sayeh.wificontrol.desktop.DesktopMainKt --win-console
+          if (!(Test-Path dist/WiFiControlDirectV4/WiFiControlDirectV4.exe)) { throw 'Windows launcher missing' }
+          Compress-Archive -Path dist/WiFiControlDirectV4/* -DestinationPath WiFi-Control-Direct-v4-Windows.zip
+          (Get-FileHash WiFi-Control-Direct-v4-Windows.zip -Algorithm SHA256).Hash.ToLower() | Out-File WiFi-Control-Direct-v4-Windows.sha256 -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WiFi-Control-Direct-v4-Windows
+          path: |
+            WiFi-Control-Direct-v4-Windows.zip
+            WiFi-Control-Direct-v4-Windows.sha256
+
+  publish-result:
+    if: always() && (github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-CONTROL-DIRECT-V4')
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Record results
+        run: |
+          printf 'android=%s\nwindows=%s\n' '${{ needs.android.result }}' '${{ needs.windows.result }}' > wifi-control-direct-v4-results.txt
+          echo "$GITHUB_RUN_ID" > wifi-control-direct-v4-run.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add wifi-control-direct-v4-results.txt wifi-control-direct-v4-run.txt
+          git commit -m 'Publish WiFi Control Direct v4 build result' || true
+          git push origin main || true
