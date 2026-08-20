@@ -1,215 +1,239 @@
 package org.sayeh.wificontrol
 
 import android.app.AlertDialog
-import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import org.sayeh.wificontrol.core.DirectRouter
 import java.util.Locale
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.atomic.AtomicInteger
 
 class MainActivity : AppCompatActivity() {
-    private lateinit var status: TextView
-    private lateinit var clientList: LinearLayout
-    private lateinit var protectedStatus: TextView
     private lateinit var routerUrl: EditText
     private lateinit var username: EditText
     private lateinit var password: EditText
-    private val prefs by lazy { getSharedPreferences("wifi_control_local", MODE_PRIVATE) }
+    private lateinit var connectBtn: Button
+    private lateinit var refreshBtn: Button
+    private lateinit var status: TextView
+    private lateinit var capabilities: TextView
+    private lateinit var managerStatus: TextView
+    private lateinit var clientList: LinearLayout
+    private lateinit var antiQrBtn: Button
+    private lateinit var filterOffBtn: Button
+    private lateinit var statsBtn: Button
+    private lateinit var statsText: TextView
+
+    private val prefs by lazy { getSharedPreferences("wifi_control_direct_v4", MODE_PRIVATE) }
+    private val executor = Executors.newCachedThreadPool()
+    private val main = Handler(Looper.getMainLooper())
+    private val operationId = AtomicInteger(0)
+    private val allowChecks = linkedMapOf<String, CheckBox>()
+
+    private var caps = DirectRouter.Capabilities()
+    private var wirelessCapacity = 0
+    private var currentClients: List<DirectRouter.Client> = emptyList()
+    private var connected = false
+    private var busy = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
         routerUrl = findViewById(R.id.routerUrl)
         username = findViewById(R.id.username)
         password = findViewById(R.id.password)
+        connectBtn = findViewById(R.id.connectBtn)
+        refreshBtn = findViewById(R.id.refreshBtn)
         status = findViewById(R.id.status)
+        capabilities = findViewById(R.id.capabilities)
+        managerStatus = findViewById(R.id.managerStatus)
         clientList = findViewById(R.id.clientList)
-        protectedStatus = findViewById(R.id.protectedStatus)
-        username.setText(prefs.getString("last_user", "admin") ?: "admin")
-        routerUrl.setText(prefs.getString("last_router_url", "http://192.168.1.1") ?: "http://192.168.1.1")
+        antiQrBtn = findViewById(R.id.antiQrBtn)
+        filterOffBtn = findViewById(R.id.filterOffBtn)
+        statsBtn = findViewById(R.id.statsBtn)
+        statsText = findViewById(R.id.statsText)
 
-        findViewById<Button>(R.id.scanBtn).setOnClickListener { openEngine("sync") }
-        findViewById<Button>(R.id.calibrateBtn).setOnClickListener { openProfiler() }
-        findViewById<Button>(R.id.usageBtn).setOnClickListener { openEngine("usage") }
-        findViewById<Button>(R.id.guestBtn).setOnClickListener { openEngine("guest_probe") }
-        findViewById<Button>(R.id.antiQrBtn).setOnClickListener { enableAntiQr() }
-        findViewById<Button>(R.id.antiQrOffBtn).setOnClickListener { disableAntiQr() }
-        findViewById<Button>(R.id.emergencyBtn).setOnClickListener { emergencyDisableFilter() }
-        loadState()
+        routerUrl.setText(prefs.getString("router_url", "http://192.168.1.1"))
+        username.setText(prefs.getString("router_user", "admin"))
+
+        connectBtn.setOnClickListener { connectDirect() }
+        refreshBtn.setOnClickListener { refreshClients() }
+        antiQrBtn.setOnClickListener { activateAllowList() }
+        filterOffBtn.setOnClickListener { disableFilter() }
+        statsBtn.setOnClickListener { readStats() }
+        renderClients()
+        updateUi()
     }
 
-    override fun onResume() {
-        super.onResume()
-        loadState()
+    override fun onDestroy() {
+        operationId.incrementAndGet()
+        executor.shutdownNow()
+        super.onDestroy()
     }
 
     private fun baseUrl(): String = routerUrl.text.toString().trim().ifBlank { "http://192.168.1.1" }.trimEnd('/')
 
     private fun credentialsReady(): Boolean {
-        if (username.text.toString().isBlank() || password.text.toString().isBlank()) {
-            status.text = "نام کاربری و رمز ادمین روتر را وارد کن."
+        if (username.text.toString().trim().isBlank() || password.text.toString().isBlank()) {
+            status.text = "نام کاربری و رمز ادمین را وارد کن."
             return false
         }
         prefs.edit()
-            .putString("last_user", username.text.toString().trim())
-            .putString("last_router_url", baseUrl())
+            .putString("router_url", baseUrl())
+            .putString("router_user", username.text.toString().trim())
             .apply()
         return true
     }
 
-    private fun openEngine(action: String, targetMac: String? = null, allowedMacs: Set<String>? = null) {
+    private fun engine(): DirectRouter = DirectRouter(
+        baseUrl(),
+        username.text.toString().trim(),
+        password.text.toString(),
+        prefs.getString("manager_mac", null)
+    )
+
+    private fun connectDirect() {
         if (!credentialsReady()) return
-        val intent = Intent(this, RouterNativeActivity::class.java).apply {
-            putExtra("baseUrl", baseUrl())
-            putExtra("user", username.text.toString().trim())
-            putExtra("pass", password.text.toString())
-            putExtra("action", action)
-            if (targetMac != null) putExtra("targetMac", targetMac)
-            if (allowedMacs != null) putExtra("allowedMacs", allowedMacs.joinToString(","))
-        }
-        startActivity(intent)
-    }
-
-    private fun openProfiler() {
-        if (!credentialsReady()) return
-        val intent = Intent(this, FirmwareProfilerActivity::class.java).apply {
-            putExtra("baseUrl", baseUrl())
-            putExtra("user", username.text.toString().trim())
-            putExtra("pass", password.text.toString())
-        }
-        startActivity(intent)
-    }
-
-    private fun loadState() {
-        val online = prefs.getStringSet("online_macs", emptySet())?.map { it.uppercase(Locale.US) }?.toSet() ?: emptySet()
-        val known = prefs.getStringSet("known_macs", emptySet())?.map { it.uppercase(Locale.US) }?.toMutableSet() ?: mutableSetOf()
-        val blocked = prefs.getStringSet("blocked_macs", emptySet())?.map { it.uppercase(Locale.US) }?.toSet() ?: emptySet()
-        val allowed = prefs.getStringSet("allowed_macs", emptySet())?.map { it.uppercase(Locale.US) }?.toSet() ?: emptySet()
-        prefs.getString("protected_mac", null)?.uppercase(Locale.US)?.let { known.add(it) }
-        known.addAll(online)
-        known.addAll(blocked)
-        known.addAll(allowed)
-
-        val controlReady = prefs.getBoolean("control_ready", false)
-        findViewById<Button>(R.id.antiQrBtn).isEnabled = controlReady
-        findViewById<Button>(R.id.antiQrOffBtn).isEnabled = controlReady
-        findViewById<Button>(R.id.emergencyBtn).isEnabled = controlReady
-
-        val message = prefs.getString("router_last_message", null)
-        val firmware = prefs.getString("firmware_version", null)
-        status.text = message ?: if (known.isEmpty()) {
-            "آماده — «اتصال + Verify کنترل واقعی» را بزن."
-        } else {
-            "${online.size} دستگاه آنلاین • ${known.size} دستگاه ثبت‌شده${if (firmware.isNullOrBlank()) "" else " • $firmware"}${if (!controlReady) " • کنترل تغییر‌دهنده هنوز Verify نشده" else " • موتور کنترل Verify شده"}"
-        }
-        renderClients(known.toList(), online, blocked, allowed, controlReady)
-    }
-
-    private fun renderClients(all: List<String>, online: Set<String>, blocked: Set<String>, allowed: Set<String>, controlReady: Boolean) {
-        clientList.removeAllViews()
-        val protectedMac = prefs.getString("protected_mac", null)?.uppercase(Locale.US)
-        val antiQr = prefs.getBoolean("anti_qr_active", false)
-
-        val ordered = all.distinct().sortedWith(
-            compareByDescending<String> { it == protectedMac }
-                .thenByDescending { it in online }
-                .thenBy { prefs.getString("alias_$it", "") ?: "" }
-                .thenBy { it }
+        runOperation("در حال اتصال مستقیم HTTP به روتر…", 30000,
+            task = { engine().connectAndProbe() },
+            onSuccess = { snap ->
+                if (!snap.ok) {
+                    connected = false
+                    caps = DirectRouter.Capabilities()
+                    wirelessCapacity = 0
+                    currentClients = emptyList()
+                    status.text = snap.message
+                } else {
+                    connected = true
+                    caps = snap.capabilities
+                    wirelessCapacity = snap.wirelessCapacity
+                    currentClients = snap.clients
+                    status.text = buildString {
+                        append(snap.message)
+                        if (snap.firmware.isNotBlank()) append("\nFirmware: ").append(snap.firmware)
+                    }
+                }
+                renderClients()
+                updateUi()
+            }
         )
+    }
 
-        if (ordered.isEmpty()) {
+    private fun refreshClients() {
+        if (!credentialsReady() || !connected) return
+        runOperation("در حال خواندن مستقیم دستگاه‌ها…", 18000,
+            task = { engine().clients() },
+            onSuccess = { list ->
+                currentClients = list
+                status.text = "${list.size} دستگاه از خود روتر تازه شد."
+                renderClients()
+                updateUi()
+            }
+        )
+    }
+
+    private fun renderClients() {
+        clientList.removeAllViews()
+        allowChecks.clear()
+        val manager = prefs.getString("manager_mac", null)?.uppercase(Locale.US)
+        val lastAllow = prefs.getStringSet("allow_macs", emptySet())?.map { it.uppercase(Locale.US) }?.toSet() ?: emptySet()
+        managerStatus.text = if (manager.isNullOrBlank()) "دستگاه مدیر مشخص نشده است." else "دستگاه مدیر محافظت‌شده: $manager"
+
+        if (currentClients.isEmpty()) {
             clientList.addView(TextView(this).apply {
-                text = "هنوز دستگاهی خوانده نشده است. «اتصال + Verify کنترل واقعی» را بزن."
-                setPadding(0, dp(12), 0, dp(12))
+                text = if (connected) "روتر فعلاً Wireless Client نشان نداد." else "برای خواندن دستگاه‌ها «اتصال مستقیم به روتر» را بزن."
+                setPadding(6, 12, 6, 12)
             })
-            updateProtectedStatus()
             return
         }
 
-        ordered.forEachIndexed { index, mac ->
-            val alias = prefs.getString("alias_$mac", null)
-            val isProtected = mac == protectedMac
-            val isOnline = mac in online
-            val isBlocked = mac in blocked
-            val isAllowed = isProtected || mac in allowed
-
-            val box = LinearLayout(this).apply {
+        val ordered = currentClients.distinctBy { it.mac }.sortedWith(compareByDescending<DirectRouter.Client> { it.mac.equals(manager, true) }.thenBy { it.mac })
+        for (c in ordered) {
+            val mac = c.mac.uppercase(Locale.US)
+            val isManager = mac == manager
+            val alias = prefs.getString("alias_$mac", "").orEmpty()
+            val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(dp(12), dp(10), dp(12), dp(10))
+                setPadding(8, 10, 8, 14)
             }
-            box.addView(TextView(this).apply {
-                text = alias?.takeIf { it.isNotBlank() } ?: "دستگاه ${index + 1}"
-                textSize = 18f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-            })
-            box.addView(TextView(this).apply {
-                text = mac
-                textDirection = TextView.TEXT_DIRECTION_LTR
+            card.addView(TextView(this).apply {
+                text = buildString {
+                    if (alias.isNotBlank()) append(alias).append("\n")
+                    append(mac)
+                    c.ip?.let { append("  •  ").append(it) }
+                    if (isManager) append("  •  مدیر")
+                }
+                textSize = 16f
                 setTextIsSelectable(true)
             })
-            box.addView(TextView(this).apply {
-                text = when {
-                    isProtected -> if (isOnline) "✓ تلفن مدیر — آنلاین و محافظت‌شده" else "✓ تلفن مدیر — محافظت‌شده"
-                    antiQr && isAllowed && isOnline -> "✓ آنلاین • مجاز در ضد QR"
-                    antiQr && isAllowed -> "✓ مجاز در ضد QR"
-                    antiQr && !isAllowed && isOnline -> "⛔ آنلاین فعلی • خارج از Allow‑List"
-                    isBlocked -> "⛔ Block تأییدشده در روتر"
-                    isOnline -> "● آنلاین"
-                    else -> "○ آفلاین / سابقه دستگاه"
-                }
-                setPadding(0, dp(5), 0, dp(5))
-            })
+
+            val check = CheckBox(this).apply {
+                text = "مجاز در ضد QR"
+                isChecked = isManager || mac in lastAllow
+                isEnabled = !isManager
+            }
+            allowChecks[mac] = check
+            card.addView(check)
 
             val row1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             row1.addView(Button(this).apply {
-                text = if (isProtected) "تلفن مدیر" else "این تلفن من است"
-                isEnabled = !isProtected
+                text = if (isManager) "مدیر ✓" else "این دستگاه مدیر است"
+                isEnabled = !busy && !isManager
                 setOnClickListener {
-                    prefs.edit().putString("protected_mac", mac).apply()
-                    status.text = "$mac به‌عنوان تلفن مدیر محافظت شد."
-                    loadState()
+                    prefs.edit().putString("manager_mac", mac).apply()
+                    val allowed = prefs.getStringSet("allow_macs", emptySet())?.toMutableSet() ?: mutableSetOf()
+                    allowed.add(mac)
+                    prefs.edit().putStringSet("allow_macs", allowed).apply()
+                    status.text = "$mac به‌عنوان مدیر محافظت شد."
+                    renderClients(); updateUi()
                 }
-            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            }, weight())
             row1.addView(Button(this).apply {
                 text = "نام‌گذاری"
+                isEnabled = !busy
                 setOnClickListener { rename(mac) }
-            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            box.addView(row1)
+            }, weight())
+            card.addView(row1)
 
-            if (!isProtected) {
+            if (!isManager) {
                 val row2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
                 row2.addView(Button(this).apply {
-                    text = if (isAllowed) "لغو مجوز QR" else "مجاز برای QR"
-                    isEnabled = controlReady
-                    setOnClickListener {
-                        val next = prefs.getStringSet("allowed_macs", emptySet())?.map { it.uppercase(Locale.US) }?.toMutableSet() ?: mutableSetOf()
-                        if (isAllowed) next.remove(mac) else next.add(mac)
-                        prefs.edit().putStringSet("allowed_macs", next).apply()
-                        loadState()
-                    }
-                }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-
+                    text = "قطع Wi‑Fi"
+                    isEnabled = !busy && caps.wirelessMacFilter
+                    setOnClickListener { confirmWifi(mac, true) }
+                }, weight())
                 row2.addView(Button(this).apply {
-                    text = if (isBlocked) "وصل‌کردن دوباره" else "قطع واقعی"
-                    isEnabled = controlReady && protectedMac != null && !antiQr
-                    setOnClickListener {
-                        val selectedAction = if (isBlocked) "unblock" else "block"
-                        AlertDialog.Builder(this@MainActivity)
-                            .setTitle(if (isBlocked) "وصل‌کردن دوباره؟" else "قطع واقعی این دستگاه؟")
-                            .setMessage("MAC: $mac\nفرمان مستقیماً روی /basic/home_wlan.htm اجرا می‌شود و فقط پس از SAVE و خواندن مجدد وضعیت از خود روتر موفق شمرده می‌شود.")
-                            .setPositiveButton("اجرا") { _, _ -> openEngine(selectedAction, targetMac = mac) }
-                            .setNegativeButton("لغو", null)
-                            .show()
-                    }
-                }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-                box.addView(row2)
+                    text = "وصل Wi‑Fi"
+                    isEnabled = !busy && caps.wirelessMacFilter
+                    setOnClickListener { confirmWifi(mac, false) }
+                }, weight())
+                card.addView(row2)
+
+                if (caps.internetMacFilter) {
+                    val row3 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                    row3.addView(Button(this).apply {
+                        text = "قطع اینترنت"
+                        isEnabled = !busy
+                        setOnClickListener { confirmInternet(mac, true) }
+                    }, weight())
+                    row3.addView(Button(this).apply {
+                        text = "وصل اینترنت"
+                        isEnabled = !busy
+                        setOnClickListener { confirmInternet(mac, false) }
+                    }, weight())
+                    card.addView(row3)
+                }
             }
-            clientList.addView(box)
+            clientList.addView(card)
         }
-        updateProtectedStatus()
     }
 
     private fun rename(mac: String) {
@@ -223,66 +247,155 @@ class MainActivity : AppCompatActivity() {
             .setView(input)
             .setPositiveButton("ذخیره") { _, _ ->
                 prefs.edit().putString("alias_$mac", input.text.toString().trim()).apply()
-                loadState()
+                renderClients()
             }
             .setNegativeButton("لغو", null)
             .show()
     }
 
-    private fun enableAntiQr() {
-        if (!prefs.getBoolean("control_ready", false)) {
-            status.text = "اول اتصال و Verify کنترل واقعی را اجرا کن."
-            return
-        }
-        val owner = prefs.getString("protected_mac", null)?.uppercase(Locale.US)
-        if (owner.isNullOrBlank()) {
-            status.text = "اول تلفن خودت را به‌عنوان «تلفن مدیر» مشخص کن."
-            return
-        }
-        val allowed = prefs.getStringSet("allowed_macs", emptySet())?.map { it.uppercase(Locale.US) }?.toMutableSet() ?: mutableSetOf()
-        allowed.add(owner)
+    private fun confirmWifi(mac: String, block: Boolean) {
         AlertDialog.Builder(this)
-            .setTitle("ضد QR واقعی فعال شود؟")
-            .setMessage("روتر روی Allow Association قرار می‌گیرد و فقط MACهای انتخاب‌شده + تلفن مدیر اجازه اتصال خواهند داشت. نتیجه بعد از SAVE دوباره Verify می‌شود.")
-            .setPositiveButton("فعال کن") { _, _ -> openEngine("antiqr_enable", allowedMacs = allowed) }
+            .setTitle(if (block) "قطع Wi‑Fi این دستگاه؟" else "اجازه اتصال دوباره؟")
+            .setMessage("$mac\nفرمان مستقیماً روی Wireless MAC Filter روتر POST می‌شود و بعد دوباره از خود روتر خوانده می‌شود.")
+            .setPositiveButton("اجرا") { _, _ ->
+                runOperation(if (block) "در حال Block واقعی $mac…" else "در حال Unblock واقعی $mac…", 22000,
+                    task = { if (block) engine().blockWifi(mac) else engine().unblockWifi(mac) },
+                    onSuccess = { r -> status.text = r.message; updateUi(); renderClients() })
+            }
             .setNegativeButton("لغو", null)
             .show()
     }
 
-    private fun disableAntiQr() {
-        if (!prefs.getBoolean("control_ready", false)) {
-            status.text = "کنترل تغییر‌دهنده هنوز Verify نشده است."
-            return
-        }
+    private fun confirmInternet(mac: String, block: Boolean) {
         AlertDialog.Builder(this)
-            .setTitle("ضد QR خاموش شود؟")
-            .setMessage("Wireless MAC Filter خاموش و نتیجه از خود روتر Verify می‌شود.")
-            .setPositiveButton("خاموش کن") { _, _ -> openEngine("antiqr_disable") }
+            .setTitle(if (block) "قطع اینترنت این دستگاه؟" else "وصل اینترنت این دستگاه؟")
+            .setMessage("$mac\nاین فرمان فقط وقتی فعال است که فرم Access Management → IP/MAC Filter واقعاً از firmware تشخیص داده شده باشد.")
+            .setPositiveButton("اجرا") { _, _ ->
+                runOperation(if (block) "در حال ثبت MAC Filter اینترنت…" else "در حال برداشتن MAC Filter اینترنت…", 22000,
+                    task = { if (block) engine().blockInternet(mac) else engine().unblockInternet(mac) },
+                    onSuccess = { r -> status.text = r.message; updateUi(); renderClients() })
+            }
             .setNegativeButton("لغو", null)
             .show()
     }
 
-    private fun emergencyDisableFilter() {
-        if (!prefs.getBoolean("control_ready", false)) {
-            status.text = "بازگردانی تا زمان Verify کنترل واقعی قفل است."
+    private fun activateAllowList() {
+        val manager = prefs.getString("manager_mac", null)?.uppercase(Locale.US)
+        if (manager.isNullOrBlank()) {
+            status.text = "اول دستگاه خودت را به‌عنوان مدیر مشخص کن."
+            return
+        }
+        val selected = allowChecks.filterValues { it.isChecked }.keys.toMutableSet()
+        selected.add(manager)
+        if (wirelessCapacity > 0 && selected.size > wirelessCapacity) {
+            status.text = "ظرفیت واقعی MAC Filter فقط $wirelessCapacity دستگاه است."
             return
         }
         AlertDialog.Builder(this)
-            .setTitle("بازگردانی اضطراری دسترسی؟")
-            .setMessage("فقط Wireless MAC Filter خاموش می‌شود؛ WAN/ADSL، رمز Wi‑Fi و DHCP تغییر نمی‌کند.")
-            .setPositiveButton("اجرا") { _, _ -> openEngine("filter_off") }
+            .setTitle("فعال‌سازی ضد QR واقعی")
+            .setMessage("فقط ${selected.size} MAC انتخاب‌شده اجازه Association خواهند داشت. دستگاه مدیر داخل فهرست است.")
+            .setPositiveButton("فعال کن") { _, _ ->
+                runOperation("در حال ثبت Allow‑List روی روتر…", 22000,
+                    task = { engine().setAllowList(selected) },
+                    onSuccess = { r ->
+                        status.text = r.message
+                        if (r.ok && r.verified) prefs.edit().putStringSet("allow_macs", selected).apply()
+                        updateUi(); renderClients()
+                    })
+            }
             .setNegativeButton("لغو", null)
             .show()
     }
 
-    private fun updateProtectedStatus() {
-        val mac = prefs.getString("protected_mac", null)
-        protectedStatus.text = if (mac.isNullOrBlank()) {
-            "تلفن مدیر هنوز مشخص نشده. قبل از Block یا ضد QR آن را مشخص کن."
-        } else {
-            "تلفن مدیر محافظت‌شده: $mac"
+    private fun disableFilter() {
+        AlertDialog.Builder(this)
+            .setTitle("Wireless MAC Filter خاموش شود؟")
+            .setMessage("فقط MAC Filter خاموش می‌شود؛ WAN/ADSL، DHCP و رمز Wi‑Fi دست نمی‌خورند.")
+            .setPositiveButton("خاموش کن") { _, _ ->
+                runOperation("در حال خاموش‌کردن MAC Filter…", 22000,
+                    task = { engine().disableWirelessFilter() },
+                    onSuccess = { r -> status.text = r.message; updateUi(); renderClients() })
+            }
+            .setNegativeButton("لغو", null)
+            .show()
+    }
+
+    private fun readStats() {
+        runOperation("در حال خواندن Byte Counter از روتر…", 18000,
+            task = { engine().traffic() },
+            onSuccess = { t ->
+                if (t == null) {
+                    statsText.text = "این firmware شمارندهٔ قابل‌تشخیص ارائه نکرد."
+                    status.text = "آمار ساختگی نمایش داده نشد."
+                } else {
+                    val total = t.rxBytes + t.txBytes
+                    statsText.text = "RX: ${formatBytes(t.rxBytes)}\nTX: ${formatBytes(t.txBytes)}\nTotal: ${formatBytes(total)}"
+                    status.text = "Byte Counter واقعی از روتر خوانده شد."
+                }
+                updateUi()
+            })
+    }
+
+    private fun updateUi() {
+        connectBtn.isEnabled = !busy
+        refreshBtn.isEnabled = !busy && connected
+        antiQrBtn.isEnabled = !busy && connected && caps.wirelessMacFilter
+        filterOffBtn.isEnabled = !busy && connected && caps.wirelessMacFilter
+        statsBtn.isEnabled = !busy && connected && caps.statistics
+        capabilities.text = buildString {
+            append("Devices ").append(mark(caps.devices))
+            append(" • Wi‑Fi MAC ").append(mark(caps.wirelessMacFilter))
+            if (wirelessCapacity > 0) append("(").append(wirelessCapacity).append(")")
+            append(" • Internet MAC ").append(mark(caps.internetMacFilter))
+            append("\nQoS ").append(mark(caps.qos))
+            append(" • Statistics ").append(mark(caps.statistics))
+            append(" • Guest ").append(mark(caps.guest))
+            append(" • Guest BW ").append(mark(caps.guestBandwidth))
         }
     }
 
-    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+    private fun mark(v: Boolean) = if (v) "✓" else "—"
+    private fun weight() = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+
+    private fun formatBytes(v: Long): String {
+        val gb = v.toDouble() / (1024.0 * 1024.0 * 1024.0)
+        return if (gb >= 0.01) String.format(Locale.US, "%.3f GB", gb) else String.format(Locale.US, "%.2f MB", v / (1024.0 * 1024.0))
+    }
+
+    private fun setBusy(value: Boolean, message: String? = null) {
+        busy = value
+        if (message != null) status.text = message
+        updateUi()
+        renderClients()
+    }
+
+    private fun <T> runOperation(label: String, timeoutMs: Long, task: () -> T, onSuccess: (T) -> Unit) {
+        if (busy) return
+        val id = operationId.incrementAndGet()
+        setBusy(true, label)
+        var future: Future<*>? = null
+        future = executor.submit {
+            try {
+                val value = task()
+                main.post {
+                    if (operationId.get() != id) return@post
+                    setBusy(false)
+                    onSuccess(value)
+                }
+            } catch (e: Exception) {
+                main.post {
+                    if (operationId.get() != id) return@post
+                    setBusy(false)
+                    status.text = "خطا: ${e.message ?: e.javaClass.simpleName}"
+                }
+            }
+        }
+        main.postDelayed({
+            if (operationId.compareAndSet(id, id + 1)) {
+                future?.cancel(true)
+                setBusy(false)
+                status.text = "Timeout: عملیات در ${timeoutMs / 1000} ثانیه تمام نشد. اپ دیگر در حالت «در حال ورود» گیر نمی‌ماند."
+            }
+        }, timeoutMs)
+    }
 }
