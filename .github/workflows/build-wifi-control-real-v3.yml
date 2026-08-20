@@ -1,6 +1,10 @@
 name: Build WiFi Control Real v3
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-wifi-control-real-v3.yml'
   workflow_dispatch:
   issues:
     types: [opened]
@@ -117,3 +121,5 @@ jobs:
           git add wifi-control-real-v3-results.txt wifi-control-real-v3-run.txt
           git commit -m 'Publish WiFi Control Real v3 build result' || true
           git push origin main || true
+
+# deterministic v3 trigger
