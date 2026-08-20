@@ -1,6 +1,10 @@
 name: Build WiFi Control Direct v4.1
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-wifi-control-direct-v4.1.yml'
   workflow_dispatch:
   issues:
     types: [opened]
@@ -68,3 +72,5 @@ jobs:
           git add wifi-control-direct-v4.1-results.txt wifi-control-direct-v4.1-run.txt
           git commit -m 'Publish WiFi Control Direct v4.1 build result' || true
           git push origin main || true
+
+# trigger 2026-08-20 hybrid-auth rebuild
