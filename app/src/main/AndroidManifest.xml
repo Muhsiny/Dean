@@ -5,7 +5,7 @@
     <application
         android:theme="@style/Theme.WifiControl"
         android:usesCleartextTraffic="true"
-        android:label="WiFi Control Direct">
+        android:label="WiFi Control CLI">
         <activity android:name=".MainActivity" android:screenOrientation="portrait" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
