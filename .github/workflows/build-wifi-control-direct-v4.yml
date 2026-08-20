@@ -106,4 +106,4 @@ jobs:
           git commit -m 'Publish WiFi Control Direct v4 build result' || true
           git push origin main || true
 
-# direct-v4 rebuild after removing all obsolete WebView control code
+# trigger after DesktopMain selectedIndices fix 2026-08-20
