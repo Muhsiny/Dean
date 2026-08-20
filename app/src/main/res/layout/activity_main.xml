@@ -1,4 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true">
@@ -11,140 +13,134 @@
         android:layoutDirection="rtl">
 
         <TextView
+            android:id="@+id/title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="WiFi Control Direct v4.1"
+            android:text="WiFi Control CLI v5"
+            android:textSize="28sp"
             android:textStyle="bold"
-            android:textSize="28sp" />
+            android:gravity="start" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="TP-Link TD-W8961N V4 • Firmware Login JS + Direct HTTP Control"
-            android:textSize="13sp"
-            android:paddingBottom="10dp" />
+            android:layout_marginTop="4dp"
+            android:text="TP-Link TD-W8961N V4 • Telnet CLI واقعی • Block/Unblock تاییدشده"
+            android:textSize="14sp"
+            android:alpha="0.75" />
 
         <EditText
-            android:id="@+id/routerUrl"
+            android:id="@+id/hostInput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="http://192.168.1.1"
-            android:inputType="textUri" />
+            android:layout_marginTop="18dp"
+            android:hint="IP روتر"
+            android:inputType="textUri"
+            android:text="192.168.1.1"
+            android:gravity="start"
+            android:textDirection="ltr" />
 
         <EditText
-            android:id="@+id/username"
+            android:id="@+id/passwordInput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="نام کاربری ادمین"
-            android:inputType="text" />
-
-        <EditText
-            android:id="@+id/password"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="رمز ادمین"
-            android:inputType="textPassword" />
-
-        <Button
-            android:id="@+id/connectBtn"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="ورود firmware + اتصال مستقیم" />
-
-        <Button
-            android:id="@+id/refreshBtn"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="تازه‌سازی دستگاه‌ها"
-            android:enabled="false" />
-
-        <TextView
-            android:id="@+id/status"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="آماده"
-            android:textStyle="bold"
-            android:paddingTop="10dp"
-            android:paddingBottom="8dp" />
-
-        <TextView
-            android:id="@+id/capabilities"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="قابلیت‌ها پس از اتصال از خود روتر خوانده می‌شوند."
-            android:paddingBottom="8dp" />
-
-        <TextView
-            android:id="@+id/managerStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="دستگاه مدیر مشخص نشده است."
-            android:textStyle="bold"
-            android:padding="8dp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="دستگاه‌های متصل"
-            android:textStyle="bold"
-            android:textSize="21sp"
-            android:paddingTop="10dp" />
+            android:hint="رمز مدیریت روتر"
+            android:inputType="textPassword"
+            android:gravity="start"
+            android:textDirection="ltr" />
 
         <LinearLayout
-            android:id="@+id/clientList"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical" />
+            android:orientation="horizontal"
+            android:layoutDirection="rtl"
+            android:layout_marginTop="10dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/connectButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="اتصال واقعی" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/refreshButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:text="تازه‌سازی" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="برای شروع، رمز روتر را وارد و اتصال واقعی را بزنید."
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/managerText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="دستگاه مدیر: مشخص نشده"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="14dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/emergencyButton"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="بازکردن اضطراری همه دستگاه‌ها" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/allowOnlyButton"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="فعال‌سازی ضد QR برای دستگاه‌های مجاز" />
+        </LinearLayout>
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="ضد اشتراک رمز / QR"
-            android:textStyle="bold"
-            android:textSize="21sp"
-            android:paddingTop="14dp" />
-
-        <Button
-            android:id="@+id/antiQrBtn"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="فعال‌سازی Allow‑List برای دستگاه‌های تیک‌شده"
-            android:enabled="false" />
-
-        <Button
-            android:id="@+id/filterOffBtn"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="خاموش‌کردن Wireless MAC Filter"
-            android:enabled="false" />
+            android:layout_marginTop="18dp"
+            android:text="دستگاه‌ها"
+            android:textSize="22sp"
+            android:textStyle="bold" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="مصرف کل اینترنت"
-            android:textStyle="bold"
-            android:textSize="21sp"
-            android:paddingTop="14dp" />
+            android:layout_marginTop="4dp"
+            android:text="هر دستگاه را نام‌گذاری کنید، مدیر را محافظت کنید، قطع/وصل واقعی انجام دهید یا آن را برای Allow‑List مجاز کنید."
+            android:textSize="13sp"
+            android:alpha="0.7" />
 
-        <Button
-            android:id="@+id/statsBtn"
+        <LinearLayout
+            android:id="@+id/devicesContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="خواندن Byte Counter واقعی"
-            android:enabled="false" />
-
-        <TextView
-            android:id="@+id/statsText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="—"
-            android:padding="8dp" />
+            android:orientation="vertical"
+            android:layout_marginTop="10dp" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="قفل ایمنی: MAC روتر و دستگاه مدیر Block نمی‌شوند. هیچ Reboot/Reset/Upgrade/WAN/ADSL اجرا نمی‌شود. احراز هویت را JavaScript خود firmware انجام می‌دهد؛ کنترل پس از آن مستقیم است."
-            android:paddingTop="16dp"
-            android:paddingBottom="24dp" />
+            android:layout_marginTop="20dp"
+            android:paddingBottom="22dp"
+            android:text="قابلیت‌های این نسخه فقط بر مبنای فرمان‌هایی فعال شده‌اند که روی همین firmware عملی تایید شدند."
+            android:textSize="12sp"
+            android:alpha="0.6" />
+
     </LinearLayout>
 </ScrollView>
