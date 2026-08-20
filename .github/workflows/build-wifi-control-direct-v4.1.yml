@@ -1,0 +1,70 @@
+name: Build WiFi Control Direct v4.1
+
+on:
+  workflow_dispatch:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    if: github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-CONTROL-DIRECT-V4.1'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wifi-control-direct-v4
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install SDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build Android v4.1
+        run: gradle --no-daemon :app:assembleDebug --stacktrace
+      - name: Verify Android package
+        run: |
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee apk.txt
+          grep -q "package: name='org.sayeh.wificontrol'" apk.txt
+          grep -q "versionName='4.1.0-hybrid-auth'" apk.txt
+          grep -R "checkForm" app/src/main/java/org/sayeh/wificontrol/MainActivity.kt
+          grep -R "Firmware Login JS" app/src/main/res/layout/activity_main.xml
+          cp "$APK" WiFi-Control-Direct-v4.1-Android.apk
+          sha256sum WiFi-Control-Direct-v4.1-Android.apk > WiFi-Control-Direct-v4.1-Android.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WiFi-Control-Direct-v4.1-Android
+          path: |
+            WiFi-Control-Direct-v4.1-Android.apk
+            WiFi-Control-Direct-v4.1-Android.sha256
+
+  publish-result:
+    if: always() && (github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-CONTROL-DIRECT-V4.1')
+    needs: [android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Record result
+        run: |
+          printf 'android=%s\n' '${{ needs.android.result }}' > wifi-control-direct-v4.1-results.txt
+          echo "$GITHUB_RUN_ID" > wifi-control-direct-v4.1-run.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add wifi-control-direct-v4.1-results.txt wifi-control-direct-v4.1-run.txt
+          git commit -m 'Publish WiFi Control Direct v4.1 build result' || true
+          git push origin main || true
