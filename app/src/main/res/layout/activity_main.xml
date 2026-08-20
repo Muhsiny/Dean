@@ -1,1 +1,150 @@
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true"><LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="18dp" android:layoutDirection="rtl"><TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="مرکز مدیریت وای‌فای" android:textStyle="bold" android:textSize="28sp"/><TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="TP-Link TD-W8961N V4 • Direct Endpoint Engine v3.1" android:textSize="13sp" android:paddingBottom="8dp"/><TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="این نسخه منوهای قدیمی TP-Link را کلیک نمی‌کند. endpoint واقعی firmware 3.2.0 Build 210914 مستقیماً باز می‌شود و اگر صفحه به frameset وابسته باشد، فریم main مستقیماً روی همان endpoint قرار می‌گیرد. هیچ فرمانی بدون SAVE و Verify مجدد موفق ثبت نمی‌شود." android:padding="12dp"/><EditText android:id="@+id/routerUrl" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="http://192.168.1.1" android:inputType="textUri"/><EditText android:id="@+id/username" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="نام کاربری ادمین" android:inputType="text"/><EditText android:id="@+id/password" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="رمز ادمین" android:inputType="textPassword"/><Button android:id="@+id/scanBtn" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="اتصال + Verify مستقیم کنترل واقعی"/><Button android:id="@+id/usageBtn" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="آمار واقعی مصرف / Statistics"/><Button android:id="@+id/guestBtn" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="بررسی واقعی Guest Network"/><Button android:id="@+id/calibrateBtn" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Direct Firmware Map → JSON (فقط عیب‌یابی)"/><TextView android:id="@+id/status" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="آماده" android:paddingTop="10dp" android:paddingBottom="10dp"/><TextView android:id="@+id/protectedStatus" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="تلفن مدیر هنوز مشخص نشده" android:textStyle="bold" android:padding="10dp"/><TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="دستگاه‌ها" android:textStyle="bold" android:textSize="20sp" android:paddingTop="10dp"/><LinearLayout android:id="@+id/clientList" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"/><TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="کنترل دسترسی" android:textStyle="bold" android:textSize="20sp" android:paddingTop="14dp"/><Button android:id="@+id/antiQrBtn" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="فعال‌سازی ضد QR واقعی — Allow Association" android:enabled="false"/><Button android:id="@+id/antiQrOffBtn" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="خاموش‌کردن ضد QR / MAC Filter" android:enabled="false"/><Button android:id="@+id/emergencyBtn" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="بازگردانی اضطراری دسترسی" android:enabled="false"/><TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="قفل ایمنی: تلفن مدیر قابل Block نیست. WAN/ADSL، رمز Wi‑Fi و DHCP تغییر نمی‌کند. قابلیت‌هایی مثل سرعت دقیق هر دستگاه فقط زمانی فعال می‌شوند که endpoint واقعی سخت‌افزار کشف و Verify شود؛ دکمه جعلی ساخته نمی‌شود." android:paddingTop="14dp"/></LinearLayout></ScrollView>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="18dp"
+        android:layoutDirection="rtl">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="WiFi Control Direct v4"
+            android:textStyle="bold"
+            android:textSize="28sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="TP-Link TD-W8961N V4 • Direct HTTP Engine • بدون WebView"
+            android:textSize="13sp"
+            android:paddingBottom="10dp" />
+
+        <EditText
+            android:id="@+id/routerUrl"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="http://192.168.1.1"
+            android:inputType="textUri" />
+
+        <EditText
+            android:id="@+id/username"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="نام کاربری ادمین"
+            android:inputType="text" />
+
+        <EditText
+            android:id="@+id/password"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="رمز ادمین"
+            android:inputType="textPassword" />
+
+        <Button
+            android:id="@+id/connectBtn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="اتصال مستقیم به روتر" />
+
+        <Button
+            android:id="@+id/refreshBtn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="تازه‌سازی دستگاه‌ها"
+            android:enabled="false" />
+
+        <TextView
+            android:id="@+id/status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="آماده"
+            android:textStyle="bold"
+            android:paddingTop="10dp"
+            android:paddingBottom="8dp" />
+
+        <TextView
+            android:id="@+id/capabilities"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="قابلیت‌ها پس از اتصال مستقیم از خود روتر خوانده می‌شوند."
+            android:paddingBottom="8dp" />
+
+        <TextView
+            android:id="@+id/managerStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="دستگاه مدیر مشخص نشده است."
+            android:textStyle="bold"
+            android:padding="8dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="دستگاه‌های متصل"
+            android:textStyle="bold"
+            android:textSize="21sp"
+            android:paddingTop="10dp" />
+
+        <LinearLayout
+            android:id="@+id/clientList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="ضد اشتراک رمز / QR"
+            android:textStyle="bold"
+            android:textSize="21sp"
+            android:paddingTop="14dp" />
+
+        <Button
+            android:id="@+id/antiQrBtn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="فعال‌سازی Allow‑List برای دستگاه‌های تیک‌شده"
+            android:enabled="false" />
+
+        <Button
+            android:id="@+id/filterOffBtn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="خاموش‌کردن Wireless MAC Filter"
+            android:enabled="false" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="مصرف کل اینترنت"
+            android:textStyle="bold"
+            android:textSize="21sp"
+            android:paddingTop="14dp" />
+
+        <Button
+            android:id="@+id/statsBtn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="خواندن Byte Counter واقعی"
+            android:enabled="false" />
+
+        <TextView
+            android:id="@+id/statsText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="—"
+            android:padding="8dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="قفل ایمنی: MAC روتر و دستگاه مدیر Block نمی‌شوند. هیچ Reboot/Reset/Upgrade/WAN/ADSL در این اپ اجرا نمی‌شود. هر تغییر فقط پس از POST واقعی و بازخوانی مجدد از روتر موفق شمرده می‌شود."
+            android:paddingTop="16dp"
+            android:paddingBottom="24dp" />
+    </LinearLayout>
+</ScrollView>
