@@ -1,19 +1,21 @@
-name: Build WiFi Control CLI v5
+name: Build WiFi Control CLI v5.1
 on:
-  pull_request:
+  push:
     branches: [ main ]
     paths:
-      - 'app/**'
-      - 'build.gradle'
-      - 'settings.gradle'
       - '.github/workflows/build-wifi-control-cli-v5.yml'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   android:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: wifi-control-cli-v5-mainline
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -23,17 +25,29 @@ jobs:
           gradle-version: '8.11.1'
       - name: Build APK
         run: gradle :app:assembleDebug --stacktrace
-      - name: Verify CLI engine markers
+      - name: Verify v5.1 CLI engine
         run: |
-          grep -q "5.0.0-cli-real" app/build.gradle
-          grep -q "TelnetClient" app/src/main/java/com/sayeh/aifilm/MainActivity.java
-          grep -q "rtwlan showmactable" app/src/main/java/com/sayeh/aifilm/MainActivity.java
-          grep -q "rt node accesspolicy" app/src/main/java/com/sayeh/aifilm/MainActivity.java
-          grep -q "rt node save" app/src/main/java/com/sayeh/aifilm/MainActivity.java
-          sha256sum app/build/outputs/apk/debug/app-debug.apk > WiFi-Control-CLI-v5.sha256
+          grep -q '5.1.0-cli-real' app/build.gradle
+          grep -q 'MainActivityV51' app/src/main/AndroidManifest.xml
+          grep -q 'TelnetClient' app/src/main/java/com/sayeh/aifilm/MainActivityV51.java
+          grep -q 'rt node acladdentry' app/src/main/java/com/sayeh/aifilm/MainActivityV51.java
+          grep -q 'String.join(";", desired)' app/src/main/java/com/sayeh/aifilm/MainActivityV51.java
+          grep -q 'rt node accesspolicy' app/src/main/java/com/sayeh/aifilm/MainActivityV51.java
+          grep -q 'rt node save' app/src/main/java/com/sayeh/aifilm/MainActivityV51.java
+          sha256sum app/build/outputs/apk/debug/app-debug.apk > WiFi-Control-CLI-v5.1.sha256
+      - name: Publish APK to repair branch
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/WiFi-Control-CLI-v5.1.apk
+          cp WiFi-Control-CLI-v5.1.sha256 dist/WiFi-Control-CLI-v5.1.sha256
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add dist/WiFi-Control-CLI-v5.1.apk dist/WiFi-Control-CLI-v5.1.sha256
+          git diff --cached --quiet || git commit -m 'Publish WiFi Control CLI v5.1 APK'
+          git push origin HEAD:wifi-control-cli-v5-mainline
       - uses: actions/upload-artifact@v4
         with:
-          name: WiFi-Control-CLI-v5-Android
+          name: WiFi-Control-CLI-v5.1-Android
           path: |
             app/build/outputs/apk/debug/app-debug.apk
-            WiFi-Control-CLI-v5.sha256
+            WiFi-Control-CLI-v5.1.sha256
