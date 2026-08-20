@@ -7,8 +7,8 @@ android {
         applicationId = "org.sayeh.realwifi"
         minSdk = 23
         targetSdk = 35
-        versionCode = 2
-        versionName = "2.0.0-real"
+        versionCode = 30
+        versionName = "3.0.0-real"
     }
     sourceSets.getByName("main").assets.srcDir("../shared")
     compileOptions { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
