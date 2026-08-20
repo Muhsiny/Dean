@@ -1,231 +1,223 @@
 package org.sayeh.wificontrol.desktop
 
-import org.sayeh.wificontrol.core.RouterClient
-import org.sayeh.wificontrol.core.RouterHttpEngine
-import org.sayeh.wificontrol.core.RouterProfile
-import org.sayeh.wificontrol.core.RouterProfileCodec
-import org.sayeh.wificontrol.core.UsageLedger
+import org.sayeh.wificontrol.core.DirectRouter
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.Font
 import java.io.File
+import java.util.Locale
 import java.util.Properties
+import java.util.concurrent.atomic.AtomicInteger
 import javax.swing.*
 
-private class DesktopController : JFrame("WiFi Control - TP-Link TD-W8961N") {
-    private val root = JPanel(BorderLayout(10, 10))
+private class DesktopController : JFrame("WiFi Control Direct v4") {
     private val urlField = JTextField("http://192.168.1.1", 22)
-    private val userField = JTextField("admin", 12)
+    private val userField = JTextField("admin", 10)
     private val passField = JPasswordField(12)
-    private val profileField = JTextField(28)
-    private val ownerField = JTextField(18)
-    private val packageField = JTextField(8)
-    private val status = JTextArea(5, 50)
-    private val model = DefaultListModel<String>()
-    private val clientsList = JList(model)
-    private var clients: List<RouterClient> = emptyList()
-    private var profile: RouterProfile? = null
-    private var engine: RouterHttpEngine? = null
-    private val stateDir = File(System.getProperty("user.home"), ".wifi-control").apply { mkdirs() }
+    private val managerField = JTextField(18)
+    private val status = JTextArea(5, 65)
+    private val capsLabel = JLabel("قابلیت‌ها: —")
+    private val listModel = DefaultListModel<String>()
+    private val list = JList(listModel)
+    private val connectBtn = JButton("اتصال مستقیم")
+    private val refreshBtn = JButton("تازه‌سازی")
+    private val blockWifiBtn = JButton("قطع Wi‑Fi")
+    private val unblockWifiBtn = JButton("وصل Wi‑Fi")
+    private val blockInternetBtn = JButton("قطع اینترنت")
+    private val unblockInternetBtn = JButton("وصل اینترنت")
+    private val allowBtn = JButton("ضد QR: فقط انتخاب‌شده‌ها + مدیر")
+    private val filterOffBtn = JButton("MAC Filter OFF")
+    private val statsBtn = JButton("Statistics")
+
+    private val stateDir = File(System.getProperty("user.home"), ".wifi-control-direct-v4").apply { mkdirs() }
     private val propsFile = File(stateDir, "desktop.properties")
-    private val usageFile = File(stateDir, "usage.properties")
     private val props = Properties()
+    private val opId = AtomicInteger(0)
+
+    private var clients: List<DirectRouter.Client> = emptyList()
+    private var caps = DirectRouter.Capabilities()
+    private var connected = false
+    private var busy = false
 
     init {
         defaultCloseOperation = EXIT_ON_CLOSE
-        minimumSize = Dimension(900, 680)
+        minimumSize = Dimension(920, 680)
         status.isEditable = false
         status.lineWrap = true
         status.wrapStyleWord = true
-        clientsList.selectionMode = ListSelectionModel.MULTIPLE_INTERVAL_SELECTION
+        list.selectionMode = ListSelectionModel.MULTIPLE_INTERVAL_SELECTION
         loadPrefs()
         buildUi()
+        wire()
+        updateUi()
         pack()
         setLocationRelativeTo(null)
     }
 
     private fun buildUi() {
-        val title = JLabel("مرکز مدیریت واقعی وای‌فای — Windows")
+        val title = JLabel("WiFi Control Direct v4 — Windows")
         title.font = title.font.deriveFont(Font.BOLD, 22f)
         val top = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             add(title)
+            add(JLabel("TP-Link TD-W8961N V4 • Direct HTTP Engine • بدون WebView/Profile JSON"))
             add(row(JLabel("Router:"), urlField, JLabel("User:"), userField, JLabel("Password:"), passField))
-            add(row(JLabel("Firmware profile:"), profileField, JButton("انتخاب JSON").apply { addActionListener { chooseProfile() } }))
-            add(row(JLabel("MAC تلفن مدیر:"), ownerField, JLabel("بسته کل (GB):"), packageField))
-            add(row(
-                JButton("اتصال + تازه‌سازی").apply { addActionListener { connectAndRefresh() } },
-                JButton("مصرف/باقی‌مانده").apply { addActionListener { refreshUsage() } },
-                JButton("خاموش‌کردن اضطراری MAC Filter").apply { addActionListener { emergencyOff() } }
-            ))
+            add(row(JLabel("MAC مدیر:"), managerField, connectBtn, refreshBtn))
+            add(capsLabel)
         }
-
         val center = JPanel(BorderLayout(8, 8)).apply {
-            border = BorderFactory.createTitledBorder("دستگاه‌ها")
-            add(JScrollPane(clientsList), BorderLayout.CENTER)
-            add(row(
-                JButton("قطع واقعی انتخاب‌شده").apply { addActionListener { blockSelected() } },
-                JButton("وصل‌کردن دوباره").apply { addActionListener { unblockSelected() } },
-                JButton("ضد QR: فقط انتخاب‌شده‌ها").apply { addActionListener { allowSelectedOnly() } }
-            ), BorderLayout.SOUTH)
+            border = BorderFactory.createTitledBorder("دستگاه‌های متصل")
+            add(JScrollPane(list), BorderLayout.CENTER)
+            add(JPanel().apply {
+                layout = BoxLayout(this, BoxLayout.Y_AXIS)
+                add(row(blockWifiBtn, unblockWifiBtn, blockInternetBtn, unblockInternetBtn))
+                add(row(allowBtn, filterOffBtn, statsBtn))
+            }, BorderLayout.SOUTH)
         }
-
         val bottom = JPanel(BorderLayout()).apply {
-            border = BorderFactory.createTitledBorder("نتیجه و Verification")
+            border = BorderFactory.createTitledBorder("نتیجه واقعی / Verification")
             add(JScrollPane(status), BorderLayout.CENTER)
         }
-        root.border = BorderFactory.createEmptyBorder(12, 12, 12, 12)
-        root.add(top, BorderLayout.NORTH)
-        root.add(center, BorderLayout.CENTER)
-        root.add(bottom, BorderLayout.SOUTH)
-        contentPane = root
-    }
-
-    private fun row(vararg items: java.awt.Component): JPanel = JPanel(FlowLayout(FlowLayout.LEFT, 8, 6)).apply { items.forEach(::add) }
-
-    private fun chooseProfile() {
-        val chooser = JFileChooser().apply { dialogTitle = "Firmware profile JSON" }
-        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            profileField.text = chooser.selectedFile.absolutePath
-            savePrefs()
+        contentPane = JPanel(BorderLayout(10, 10)).apply {
+            border = BorderFactory.createEmptyBorder(12, 12, 12, 12)
+            add(top, BorderLayout.NORTH)
+            add(center, BorderLayout.CENTER)
+            add(bottom, BorderLayout.SOUTH)
         }
     }
 
-    private fun connectAndRefresh() = runAsync("در حال اتصال واقعی به روتر…") {
-        val p = loadProfile() ?: return@runAsync
-        val e = RouterHttpEngine(urlField.text.trim(), p, userField.text.trim(), String(passField.password))
-        val login = e.login()
-        if (!login.ok || !login.verified) {
-            showStatus(login.message)
-            return@runAsync
+    private fun wire() {
+        connectBtn.addActionListener { connect() }
+        refreshBtn.addActionListener { refresh() }
+        blockWifiBtn.addActionListener { selectedOne()?.let { runAction("در حال Block Wi‑Fi…") { router().blockWifi(it) } } }
+        unblockWifiBtn.addActionListener { selectedOne()?.let { runAction("در حال Unblock Wi‑Fi…") { router().unblockWifi(it) } } }
+        blockInternetBtn.addActionListener { selectedOne()?.let { runAction("در حال Block اینترنت…") { router().blockInternet(it) } } }
+        unblockInternetBtn.addActionListener { selectedOne()?.let { runAction("در حال Unblock اینترنت…") { router().unblockInternet(it) } } }
+        filterOffBtn.addActionListener {
+            if (JOptionPane.showConfirmDialog(this, "Wireless MAC Filter خاموش شود؟", "Confirm", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION)
+                runAction("در حال خاموش‌کردن MAC Filter…") { router().disableWirelessFilter() }
         }
-        val found = e.clients()
-        profile = p
-        engine = e
-        clients = found
-        SwingUtilities.invokeLater {
-            model.clear()
-            found.forEach { c -> model.addElement(if (c.ip.isNullOrBlank()) c.mac else "${c.mac}   ${c.ip}") }
-            showStatus("${login.message}\n${found.size} دستگاه از جدول واقعی روتر خوانده شد.")
-            savePrefs()
-        }
+        allowBtn.addActionListener { allowSelected() }
+        statsBtn.addActionListener { readStats() }
     }
 
-    private fun selectedMacs(): List<String> = clientsList.selectedIndices.toList().mapNotNull { idx -> clients.getOrNull(idx)?.mac }
-
-    private fun blockSelected() {
-        val macs = selectedMacs()
-        if (macs.isEmpty()) { showStatus("یک دستگاه را انتخاب کن."); return }
-        val owner = ownerField.text.trim().uppercase()
-        if (owner.isNotBlank() && owner in macs.map { it.uppercase() }) { showStatus("تلفن مدیر محافظت‌شده است و Block نمی‌شود."); return }
-        runAsync("در حال Block و Verify…") {
-            val e = requireEngine() ?: return@runAsync
-            val results = macs.map { e.block(it) }
-            showStatus(results.joinToString("\n") { it.message })
-        }
+    private fun connect() {
+        if (!credentialsReady()) return
+        runOp("در حال اتصال مستقیم HTTP به روتر…", 30000,
+            task = { router().connectAndProbe() },
+            done = { s ->
+                connected = s.ok
+                caps = if (s.ok) s.capabilities else DirectRouter.Capabilities()
+                clients = if (s.ok) s.clients else emptyList()
+                status.text = s.message + if (s.firmware.isNotBlank()) "\nFirmware: ${s.firmware}" else ""
+                renderClients(); savePrefs(); updateUi()
+            })
     }
 
-    private fun unblockSelected() {
-        val macs = selectedMacs()
-        if (macs.isEmpty()) { showStatus("یک دستگاه را انتخاب کن."); return }
-        runAsync("در حال Unblock و Verify…") {
-            val e = requireEngine() ?: return@runAsync
-            val results = macs.map { e.unblock(it) }
-            showStatus(results.joinToString("\n") { it.message })
-        }
+    private fun refresh() {
+        runOp("در حال خواندن مستقیم دستگاه‌ها…", 18000,
+            task = { router().clients() },
+            done = { c -> clients = c; status.text = "${c.size} دستگاه از خود روتر خوانده شد."; renderClients(); updateUi() })
     }
 
-    private fun allowSelectedOnly() {
-        val selected = selectedMacs().toMutableSet()
-        val owner = ownerField.text.trim().uppercase()
-        if (owner.isBlank()) { showStatus("اول MAC تلفن مدیر را وارد کن؛ Allow‑List بدون مدیر اجرا نمی‌شود."); return }
-        selected.add(owner)
-        if (selected.isEmpty()) { showStatus("هیچ دستگاه مجازی انتخاب نشده."); return }
-        val confirm = JOptionPane.showConfirmDialog(this, "فقط ${selected.size} دستگاه اجازه اتصال داشته باشند؟\nMAC مدیر حتماً داخل لیست است.", "فعال‌سازی ضد QR", JOptionPane.YES_NO_OPTION)
-        if (confirm != JOptionPane.YES_OPTION) return
-        runAsync("در حال فعال‌کردن Allow‑List و Verify…") {
-            val e = requireEngine() ?: return@runAsync
-            showStatus(e.setAllowList(selected).message)
-        }
+    private fun runAction(label: String, work: () -> DirectRouter.ActionResult) {
+        runOp(label, 22000, work) { r -> status.text = r.message; updateUi() }
     }
 
-    private fun emergencyOff() {
-        val confirm = JOptionPane.showConfirmDialog(this, "Wireless MAC Filter خاموش شود؟ WAN/ADSL تغییر نمی‌کند.", "Emergency", JOptionPane.YES_NO_OPTION)
-        if (confirm != JOptionPane.YES_OPTION) return
-        runAsync("در حال خاموش‌کردن Filter و Verify…") {
-            val e = requireEngine() ?: return@runAsync
-            showStatus(e.disableMacFilter().message)
-        }
+    private fun allowSelected() {
+        val manager = managerField.text.trim().uppercase(Locale.US)
+        if (!validMac(manager)) { status.text = "MAC مدیر را درست وارد کن تا خودش قطع نشود."; return }
+        val selected = list.selectedIndices.mapNotNull { clients.getOrNull(it)?.mac }.toMutableSet()
+        selected.add(manager)
+        if (JOptionPane.showConfirmDialog(this, "فقط ${selected.size} MAC اجازه اتصال داشته باشند؟", "Allow-List", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) return
+        runAction("در حال ثبت Allow-List…") { router().setAllowList(selected) }
     }
 
-    private fun refreshUsage() = runAsync("در حال خواندن شمارنده‌های واقعی…") {
-        val e = requireEngine() ?: return@runAsync
-        val counters = e.trafficCounters()
-        if (counters == null) { showStatus("این Firmware Profile هنوز صفحه Statistics/Byte Counter دقیق ندارد؛ مصرف جعلی نشان داده نمی‌شود."); return@runAsync }
-        val ledger = loadUsage()
-        val gb = packageField.text.trim().toDoubleOrNull()
-        if (gb != null && gb > 0) ledger.packageBytes = (gb * 1024 * 1024 * 1024).toLong()
-        ledger.ingest(counters)
-        saveUsage(ledger)
-        val usedGb = ledger.usedBytes().toDouble() / (1024.0 * 1024 * 1024)
-        val remain = ledger.remainingBytes()?.toDouble()?.div(1024.0 * 1024 * 1024)
-        showStatus("مصرف ثبت‌شده: %.3f GB%s".format(usedGb, if (remain != null) "\nباقی‌مانده از بسته: %.3f GB".format(remain) else "\nبرای محاسبه باقی‌مانده، حجم کل بسته را وارد کن."))
+    private fun readStats() {
+        runOp("در حال خواندن Byte Counter…", 18000,
+            task = { router().traffic() },
+            done = { t ->
+                status.text = if (t == null) "این firmware Byte Counter قابل‌تشخیص نشان نداد." else {
+                    val total = t.rxBytes + t.txBytes
+                    "RX: ${fmt(t.rxBytes)}\nTX: ${fmt(t.txBytes)}\nTotal: ${fmt(total)}"
+                }
+            })
     }
 
-    private fun loadProfile(): RouterProfile? {
-        val file = File(profileField.text.trim())
-        if (!file.isFile) { showStatus("Firmware Profile JSON انتخاب نشده یا وجود ندارد."); return null }
-        return try { RouterProfileCodec.read(file) } catch (e: Exception) { showStatus("Profile نامعتبر است: ${e.message}"); null }
+    private fun router() = DirectRouter(urlField.text.trim(), userField.text.trim(), String(passField.password), managerField.text.trim())
+
+    private fun credentialsReady(): Boolean {
+        if (userField.text.trim().isBlank() || passField.password.isEmpty()) { status.text = "نام کاربری و رمز ادمین را وارد کن."; return false }
+        return true
     }
 
-    private fun requireEngine(): RouterHttpEngine? {
-        engine?.let { return it }
-        val p = loadProfile() ?: return null
-        val e = RouterHttpEngine(urlField.text.trim(), p, userField.text.trim(), String(passField.password))
-        val login = e.login()
-        if (!login.ok || !login.verified) { showStatus(login.message); return null }
-        engine = e
-        return e
+    private fun selectedOne(): String? {
+        val idx = list.selectedIndex
+        if (idx < 0) { status.text = "یک دستگاه را انتخاب کن."; return null }
+        return clients.getOrNull(idx)?.mac
     }
 
-    private fun runAsync(initial: String, work: () -> Unit) {
-        showStatus(initial)
-        Thread { try { work() } catch (e: Exception) { showStatus("خطا: ${e.message ?: e.javaClass.simpleName}") } }.start()
+    private fun renderClients() {
+        listModel.clear()
+        val manager = managerField.text.trim().uppercase(Locale.US)
+        clients.forEach { c -> listModel.addElement(buildString { append(c.mac); c.ip?.let { append("   ").append(it) }; if (c.mac == manager) append("   مدیر") }) }
     }
 
-    private fun showStatus(text: String) { SwingUtilities.invokeLater { status.text = text } }
+    private fun updateUi() {
+        val e = connected && !busy
+        connectBtn.isEnabled = !busy
+        refreshBtn.isEnabled = e
+        blockWifiBtn.isEnabled = e && caps.wirelessMacFilter
+        unblockWifiBtn.isEnabled = e && caps.wirelessMacFilter
+        allowBtn.isEnabled = e && caps.wirelessMacFilter
+        filterOffBtn.isEnabled = e && caps.wirelessMacFilter
+        blockInternetBtn.isEnabled = e && caps.internetMacFilter
+        unblockInternetBtn.isEnabled = e && caps.internetMacFilter
+        statsBtn.isEnabled = e && caps.statistics
+        capsLabel.text = "Devices ${m(caps.devices)} • Wi‑Fi MAC ${m(caps.wirelessMacFilter)} • Internet MAC ${m(caps.internetMacFilter)} • QoS ${m(caps.qos)} • Statistics ${m(caps.statistics)} • Guest ${m(caps.guest)} • Guest BW ${m(caps.guestBandwidth)}"
+    }
+
+    private fun m(v: Boolean) = if (v) "✓" else "—"
+    private fun row(vararg items: java.awt.Component) = JPanel(FlowLayout(FlowLayout.LEFT, 8, 6)).apply { items.forEach(::add) }
+    private fun validMac(m: String) = Regex("^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$").matches(m)
+    private fun fmt(v: Long): String { val g = v / 1073741824.0; return if (g >= .01) "%.3f GB".format(Locale.US, g) else "%.2f MB".format(Locale.US, v / 1048576.0) }
+
+    private fun <T> runOp(label: String, timeout: Int, task: () -> T, done: (T) -> Unit) {
+        if (busy) return
+        busy = true; updateUi(); status.text = label
+        val id = opId.incrementAndGet()
+        val timer = Timer(timeout) {
+            if (opId.compareAndSet(id, id + 1)) {
+                busy = false; updateUi(); status.text = "Timeout: عملیات در ${timeout / 1000} ثانیه پایان نیافت."
+            }
+        }.apply { isRepeats = false; start() }
+        Thread {
+            try {
+                val value = task()
+                SwingUtilities.invokeLater {
+                    if (opId.get() != id) return@invokeLater
+                    timer.stop(); busy = false; done(value); updateUi()
+                }
+            } catch (e: Exception) {
+                SwingUtilities.invokeLater {
+                    if (opId.get() != id) return@invokeLater
+                    timer.stop(); busy = false; updateUi(); status.text = "خطا: ${e.message ?: e.javaClass.simpleName}"
+                }
+            }
+        }.apply { isDaemon = true }.start()
+    }
 
     private fun loadPrefs() {
         if (propsFile.isFile) propsFile.inputStream().use(props::load)
         urlField.text = props.getProperty("url", "http://192.168.1.1")
         userField.text = props.getProperty("user", "admin")
-        profileField.text = props.getProperty("profile", "")
-        ownerField.text = props.getProperty("owner", "")
-        packageField.text = props.getProperty("packageGb", "")
+        managerField.text = props.getProperty("manager", "")
     }
 
     private fun savePrefs() {
-        props["url"] = urlField.text.trim(); props["user"] = userField.text.trim(); props["profile"] = profileField.text.trim(); props["owner"] = ownerField.text.trim(); props["packageGb"] = packageField.text.trim()
-        propsFile.outputStream().use { props.store(it, "WiFi Control desktop state") }
-    }
-
-    private fun loadUsage(): UsageLedger {
-        val p = Properties(); if (usageFile.isFile) usageFile.inputStream().use(p::load)
-        return UsageLedger(
-            packageBytes = p.getProperty("packageBytes", "0").toLongOrNull() ?: 0,
-            carriedRxBytes = p.getProperty("carriedRx", "0").toLongOrNull() ?: 0,
-            carriedTxBytes = p.getProperty("carriedTx", "0").toLongOrNull() ?: 0,
-            lastRxBytes = p.getProperty("lastRx", "-1").toLongOrNull() ?: -1,
-            lastTxBytes = p.getProperty("lastTx", "-1").toLongOrNull() ?: -1
-        )
-    }
-
-    private fun saveUsage(l: UsageLedger) {
-        val p = Properties().apply {
-            setProperty("packageBytes", l.packageBytes.toString()); setProperty("carriedRx", l.carriedRxBytes.toString()); setProperty("carriedTx", l.carriedTxBytes.toString()); setProperty("lastRx", l.lastRxBytes.toString()); setProperty("lastTx", l.lastTxBytes.toString())
-        }
-        usageFile.outputStream().use { p.store(it, "WiFi usage ledger") }
+        props["url"] = urlField.text.trim(); props["user"] = userField.text.trim(); props["manager"] = managerField.text.trim()
+        propsFile.outputStream().use { props.store(it, "WiFi Control Direct v4") }
     }
 }
 
