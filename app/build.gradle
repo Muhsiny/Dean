@@ -10,8 +10,8 @@ android {
         applicationId 'org.sayeh.wificontrol'
         minSdk 23
         targetSdk 35
-        versionCode 50
-        versionName '5.0.0-cli-real'
+        versionCode 51
+        versionName '5.1.0-cli-real'
     }
 
     buildTypes {
