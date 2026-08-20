@@ -45,6 +45,8 @@ jobs:
           grep -q "versionName='4.0.0-direct'" apk.txt
           grep -R "WiFi Control Direct v4" app/src/main/res/layout/activity_main.xml
           grep -R "DirectRouter" app/src/main/java/org/sayeh/wificontrol/MainActivity.kt
+          test ! -f app/src/main/java/org/sayeh/wificontrol/RouterActivity.kt
+          test ! -f app/src/main/java/org/sayeh/wificontrol/RouterNativeActivity.kt
           cp "$APK" WiFi-Control-Direct-v4-Android.apk
           sha256sum WiFi-Control-Direct-v4-Android.apk > WiFi-Control-Direct-v4-Android.sha256
       - uses: actions/upload-artifact@v4
@@ -104,4 +106,4 @@ jobs:
           git commit -m 'Publish WiFi Control Direct v4 build result' || true
           git push origin main || true
 
-# direct-v4 trigger 2026-08-20
+# direct-v4 rebuild after removing all obsolete WebView control code
