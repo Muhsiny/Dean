@@ -1,10 +1,12 @@
-name: Build WiFi Control CLI v5.1
+name: Build WiFi Control CLI v5.2
 on:
   pull_request:
     branches: [ main ]
     paths:
       - 'app/**'
       - '.github/workflows/build-wifi-control-cli-v5.yml'
+  push:
+    branches: [ wifi-control-cli-v5-2-fix ]
   workflow_dispatch:
 
 jobs:
@@ -21,19 +23,21 @@ jobs:
           gradle-version: '8.11.1'
       - name: Build APK
         run: gradle :app:assembleDebug --stacktrace
-      - name: Verify v5.1 CLI engine
+      - name: Verify v5.2 CLI engine
         run: |
-          grep -q '5.1.0-cli-real' app/build.gradle
-          grep -q 'MainActivityV51' app/src/main/AndroidManifest.xml
-          grep -q 'TelnetClient' app/src/main/java/com/sayeh/aifilm/MainActivityV51.java
-          grep -q 'rt node acladdentry' app/src/main/java/com/sayeh/aifilm/MainActivityV51.java
-          grep -q 'String.join(";", desired)' app/src/main/java/com/sayeh/aifilm/MainActivityV51.java
-          grep -q 'rt node accesspolicy' app/src/main/java/com/sayeh/aifilm/MainActivityV51.java
-          grep -q 'rt node save' app/src/main/java/com/sayeh/aifilm/MainActivityV51.java
-          sha256sum app/build/outputs/apk/debug/app-debug.apk > WiFi-Control-CLI-v5.1.sha256
+          grep -q '5.2.0-cli-persistent' app/build.gradle
+          grep -q 'MainActivityV52' app/src/main/AndroidManifest.xml
+          grep -q 'openWithRetry' app/src/main/java/com/sayeh/aifilm/MainActivityV52.java
+          grep -q 'rt node index' app/src/main/java/com/sayeh/aifilm/MainActivityV52.java
+          ! grep -q 'rtwlan node index' app/src/main/java/com/sayeh/aifilm/MainActivityV52.java
+          grep -q 'rtwlan showmactable' app/src/main/java/com/sayeh/aifilm/MainActivityV52.java
+          grep -q 'rt node acladdentry' app/src/main/java/com/sayeh/aifilm/MainActivityV52.java
+          grep -q 'rt node accesspolicy' app/src/main/java/com/sayeh/aifilm/MainActivityV52.java
+          grep -q 'rt node save' app/src/main/java/com/sayeh/aifilm/MainActivityV52.java
+          sha256sum app/build/outputs/apk/debug/app-debug.apk > WiFi-Control-CLI-v5.2.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: WiFi-Control-CLI-v5.1-Android
+          name: WiFi-Control-CLI-v5.2-Android
           path: |
             app/build/outputs/apk/debug/app-debug.apk
-            WiFi-Control-CLI-v5.1.sha256
+            WiFi-Control-CLI-v5.2.sha256

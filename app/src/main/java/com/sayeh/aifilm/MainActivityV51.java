@@ -1,7 +1,7 @@
 package com.sayeh.aifilm;
 
-import android.app.AlertDialog;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Color;
@@ -27,7 +27,6 @@ import java.net.Inet4Address;
 import java.net.NetworkInterface;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.LinkedHashMap;
@@ -41,15 +40,20 @@ import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class MainActivity extends Activity {
+public class MainActivityV51 extends Activity {
 
-    private EditText hostInput, passwordInput;
-    private Button connectButton, refreshButton, emergencyButton, allowOnlyButton;
-    private TextView statusText, managerText;
+    private EditText hostInput;
+    private EditText passwordInput;
+    private Button connectButton;
+    private Button refreshButton;
+    private Button emergencyButton;
+    private Button allowOnlyButton;
+    private TextView statusText;
+    private TextView managerText;
     private LinearLayout devicesContainer;
+
     private SharedPreferences prefs;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
-
     private volatile boolean busy = false;
     private TelnetRouter router;
     private Snapshot snapshot;
@@ -73,14 +77,14 @@ public class MainActivity extends Activity {
     private void buildUi() {
         ScrollView scroll = new ScrollView(this);
         LinearLayout root = vertical();
-        root.setPadding(dp(18), dp(18), dp(18), dp(24));
+        root.setPadding(dp(18), dp(18), dp(18), dp(28));
         root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
         scroll.addView(root);
 
-        TextView title = text("WiFi Control CLI v5", 28, true);
+        TextView title = text("WiFi Control CLI v5.1", 28, true);
         root.addView(title);
-        TextView sub = text("TP-Link TD-W8961N V4 • Telnet CLI واقعی • Block/Unblock تاییدشده", 14, false);
-        sub.setAlpha(.7f);
+        TextView sub = text("TP-Link TD-W8961N V4 • کنترل واقعی MAC • Block/Unblock/Allow-List", 14, false);
+        sub.setAlpha(.72f);
         root.addView(sub);
 
         hostInput = new EditText(this);
@@ -104,7 +108,7 @@ public class MainActivity extends Activity {
         root.addView(row, fullWrap());
 
         statusText = text("رمز روتر را وارد کنید و «اتصال واقعی» را بزنید.", 15, false);
-        statusText.setPadding(0, dp(10), 0, dp(6));
+        statusText.setPadding(0, dp(10), 0, dp(8));
         root.addView(statusText);
 
         managerText = text("دستگاه مدیر: مشخص نشده", 14, true);
@@ -119,9 +123,9 @@ public class MainActivity extends Activity {
         devicesTitle.setPadding(0, dp(16), 0, 0);
         root.addView(devicesTitle);
 
-        TextView help = text("نام‌گذاری، محافظت مدیر، قطع/وصل واقعی و Allow‑List فقط با فرمان‌های CLI تاییدشده.", 13, false);
-        help.setAlpha(.65f);
-        root.addView(help);
+        TextView note = text("نسخه 5.1 فهرست ACL را به شکل کامل جایگزین می‌کند، از جداکننده صحیح «;» استفاده می‌کند و نتیجه را از خود روتر Verify می‌کند.", 13, false);
+        note.setAlpha(.65f);
+        root.addView(note);
 
         devicesContainer = vertical();
         root.addView(devicesContainer, fullWrap());
@@ -148,7 +152,7 @@ public class MainActivity extends Activity {
         }
         prefs.edit().putString("router_host", host).apply();
         router = new TelnetRouter(host, password, 23, 1);
-        setBusy(true, "در حال اتصال مستقیم به Telnet/CLI واقعی روتر…");
+        setBusy(true, "در حال اتصال مستقیم به Telnet/CLI روتر…");
         String finalHost = host;
         executor.execute(() -> {
             try {
@@ -175,7 +179,7 @@ public class MainActivity extends Activity {
 
     private void refreshReal() {
         if (router == null || busy) return;
-        setBusy(true, "در حال خواندن مستقیم دستگاه‌ها از چیپ Wi‑Fi…");
+        setBusy(true, "در حال خواندن مستقیم دستگاه‌ها از روتر…");
         executor.execute(() -> {
             try {
                 Snapshot s = router.probe();
@@ -194,13 +198,14 @@ public class MainActivity extends Activity {
     private void runBlock(Device d, boolean block) {
         if (router == null || busy) return;
         String mac = normalizeMac(d.mac);
-        if (mac.equals(managerMac)) {
-            statusText.setText("دستگاه مدیر محافظت شده و قابل Block نیست.");
+        if (managerMac != null && mac.equals(managerMac)) {
+            statusText.setText("دستگاه مدیر محافظت شده و قابل قطع نیست.");
             return;
         }
-        setBusy(true, block ? "در حال Block واقعی و Verify…" : "در حال Unblock واقعی و Verify…");
+        setBusy(true, block ? "در حال قطع واقعی دستگاه و Verify…" : "در حال وصل‌کردن واقعی دستگاه و Verify…");
+        String protectedMac = managerMac;
         executor.execute(() -> {
-            ActionResult result = router.setBlocked(mac, block);
+            ActionResult result = router.setBlocked(mac, block, protectedMac);
             runOnUiThread(() -> consume(result));
         });
     }
@@ -223,28 +228,29 @@ public class MainActivity extends Activity {
     private void confirmAllowOnly() {
         if (router == null || busy) return;
         if (managerMac == null || managerMac.isEmpty()) {
-            statusText.setText("اول دستگاه مدیر را مشخص کنید؛ Allow‑List بدون محافظت مدیر فعال نمی‌شود.");
+            statusText.setText("اول دستگاه مدیر را مشخص کنید؛ Allow-List بدون محافظت مدیر فعال نمی‌شود.");
             return;
         }
         Set<String> approved = approvedMacs();
         approved.add(managerMac);
         new AlertDialog.Builder(this)
                 .setTitle("فعال‌سازی ضد QR")
-                .setMessage("فقط دستگاه‌های تیک‌شده اجازه اتصال خواهند داشت. دستگاه جدید حتی با داشتن رمز Wi‑Fi رد می‌شود.")
+                .setMessage("فقط دستگاه‌های تیک‌شده اجازه اتصال خواهند داشت. دستگاه جدید حتی با داشتن رمز Wi-Fi رد می‌شود.")
                 .setNegativeButton("لغو", null)
                 .setPositiveButton("فعال کن", (d, w) -> {
-                    setBusy(true, "در حال اعمال Allow‑List واقعی و Verify…");
+                    setBusy(true, "در حال اعمال Allow-List واقعی و Verify…");
+                    String protectedMac = managerMac;
                     executor.execute(() -> {
-                        ActionResult result = router.enableAllowOnly(approved, managerMac);
+                        ActionResult result = router.enableAllowOnly(approved, protectedMac);
                         runOnUiThread(() -> consume(result));
                     });
                 }).show();
     }
 
-    private void consume(ActionResult r) {
-        if (r.snapshot != null) snapshot = r.snapshot;
-        setBusy(false, r.message);
-        if (r.snapshot != null) render(r.snapshot);
+    private void consume(ActionResult result) {
+        if (result.snapshot != null) snapshot = result.snapshot;
+        setBusy(false, result.message);
+        if (result.snapshot != null) render(result.snapshot);
     }
 
     private void render(Snapshot s) {
@@ -255,12 +261,12 @@ public class MainActivity extends Activity {
 
         List<Device> list = new ArrayList<>(s.devices);
         list.sort(Comparator
-                .comparing((Device d) -> !normalizeMac(d.mac).equals(managerMac))
+                .comparing((Device d) -> managerMac == null || !normalizeMac(d.mac).equals(managerMac))
                 .thenComparing(d -> !d.online)
                 .thenComparing(d -> aliasFor(d.mac)));
 
         if (list.isEmpty()) {
-            devicesContainer.addView(text("هیچ دستگاه Wi‑Fi از CLI گزارش نشد.", 15, false));
+            devicesContainer.addView(text("هیچ دستگاه Wi-Fi از CLI گزارش نشد.", 15, false));
             return;
         }
         for (Device d : list) devicesContainer.addView(deviceCard(d, s));
@@ -268,7 +274,7 @@ public class MainActivity extends Activity {
 
     private View deviceCard(Device d, Snapshot s) {
         String mac = normalizeMac(d.mac);
-        boolean isManager = mac.equals(managerMac);
+        boolean isManager = managerMac != null && mac.equals(managerMac);
         boolean blocked = s.policy == 2 && s.acl.contains(mac);
 
         LinearLayout card = vertical();
@@ -335,7 +341,9 @@ public class MainActivity extends Activity {
 
     private void autoDetectManager(String host, Snapshot s) {
         if (managerMac != null) {
-            for (Device d : s.devices) if (normalizeMac(d.mac).equals(managerMac)) return;
+            for (Device d : s.devices) {
+                if (normalizeMac(d.mac).equals(managerMac)) return;
+            }
         }
         String local = localIpv4(host);
         if (local == null) return;
@@ -370,62 +378,56 @@ public class MainActivity extends Activity {
     }
 
     private String connectedMessage(Snapshot s) {
-        int online = 0;
-        for (Device d : s.devices) if (d.online) online++;
-        String mode = s.policy == 0 ? "MAC Filter خاموش" : s.policy == 1 ? "Allow‑List فعال" : "Reject/Block فعال (" + s.acl.size() + ")";
-        return "اتصال CLI موفق • " + online + " دستگاه آنلاین • " + mode;
+        String mode = s.policy == 0 ? "فیلتر خاموش" : s.policy == 1 ? "Allow-List" : "Block-List";
+        return "اتصال واقعی برقرار شد • " + s.devices.size() + " دستگاه • " + mode;
     }
 
     private void setBusy(boolean value, String message) {
         busy = value;
         statusText.setText(message);
         connectButton.setEnabled(!value);
-        boolean connected = router != null;
-        refreshButton.setEnabled(!value && connected);
-        emergencyButton.setEnabled(!value && connected);
-        allowOnlyButton.setEnabled(!value && connected);
-    }
-
-    private String aliasFor(String mac) {
-        return prefs.getString("alias_" + normalizeMac(mac), "");
-    }
-
-    private Set<String> approvedMacs() {
-        Set<String> raw = prefs.getStringSet("approved_macs", Collections.emptySet());
-        Set<String> out = new LinkedHashSet<>();
-        for (String s : raw) out.add(normalizeMac(s));
-        return out;
-    }
-
-    private boolean isApproved(String mac) { return approvedMacs().contains(normalizeMac(mac)); }
-
-    private void setApproved(String mac, boolean value) {
-        Set<String> set = approvedMacs();
-        String m = normalizeMac(mac);
-        if (value) set.add(m); else set.remove(m);
-        prefs.edit().putStringSet("approved_macs", set).apply();
+        refreshButton.setEnabled(!value && router != null);
+        emergencyButton.setEnabled(!value && router != null);
+        allowOnlyButton.setEnabled(!value && router != null);
     }
 
     private String friendlyError(Throwable t) {
         String m = t.getMessage() == null ? "" : t.getMessage();
         String l = m.toLowerCase(Locale.US);
-        if (l.contains("refused")) return "Telnet روتر اتصال را رد کرد. به Wi‑Fi همین روتر وصل شوید.";
         if (l.contains("password") || l.contains("login")) return "رمز مدیریت روتر پذیرفته نشد.";
-        if (l.contains("timeout")) return "پاسخ CLI روتر Timeout شد. دوباره تلاش کنید.";
-        return m.isEmpty() ? "اتصال CLI ناموفق بود." : "خطای CLI: " + m;
+        if (l.contains("refused")) return "اتصال Telnet رد شد.";
+        if (l.contains("timeout")) return "روتر در مرحله «" + m + "» پاسخ کامل نداد.";
+        return m.isEmpty() ? "ارتباط CLI ناموفق بود." : m;
+    }
+
+    private String aliasFor(String mac) {
+        return prefs.getString("alias_" + normalizeMac(mac), "").trim();
+    }
+
+    private boolean isApproved(String mac) {
+        return prefs.getBoolean("approved_" + normalizeMac(mac), false);
+    }
+
+    private void setApproved(String mac, boolean approved) {
+        prefs.edit().putBoolean("approved_" + normalizeMac(mac), approved).apply();
+    }
+
+    private Set<String> approvedMacs() {
+        Set<String> out = new LinkedHashSet<>();
+        if (snapshot == null) return out;
+        for (Device d : snapshot.devices) if (isApproved(d.mac)) out.add(normalizeMac(d.mac));
+        return out;
     }
 
     private LinearLayout vertical() {
         LinearLayout l = new LinearLayout(this);
         l.setOrientation(LinearLayout.VERTICAL);
-        l.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
         return l;
     }
 
     private LinearLayout horizontal() {
         LinearLayout l = new LinearLayout(this);
         l.setOrientation(LinearLayout.HORIZONTAL);
-        l.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
         return l;
     }
 
@@ -445,25 +447,38 @@ public class MainActivity extends Activity {
         return b;
     }
 
-    private LinearLayout.LayoutParams fullWrap() { return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT); }
-    private LinearLayout.LayoutParams wrapWrap() { return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT); }
-    private LinearLayout.LayoutParams weighted() { return new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f); }
-    private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
+    private LinearLayout.LayoutParams fullWrap() {
+        return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    }
+
+    private LinearLayout.LayoutParams wrapWrap() {
+        return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    }
+
+    private LinearLayout.LayoutParams weighted() {
+        return new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
 
     private static String normalizeMac(String mac) {
         if (mac == null) return "";
         return mac.trim().toLowerCase(Locale.US);
     }
 
-    // ---------- Verified TD-W8961N V4 Telnet/CLI engine ----------
-
     static class Device {
         String mac;
         String ip;
         Integer signalDbm;
         boolean online;
+
         Device(String mac, String ip, Integer signalDbm, boolean online) {
-            this.mac = mac; this.ip = ip; this.signalDbm = signalDbm; this.online = online;
+            this.mac = mac;
+            this.ip = ip;
+            this.signalDbm = signalDbm;
+            this.online = online;
         }
     }
 
@@ -471,15 +486,20 @@ public class MainActivity extends Activity {
         List<Device> devices = new ArrayList<>();
         int policy;
         Set<String> acl = new LinkedHashSet<>();
-        String rawWireless, rawArp, rawNode;
+        String rawWireless;
+        String rawArp;
+        String rawNode;
     }
 
     static class ActionResult {
         boolean success;
         String message;
         Snapshot snapshot;
+
         ActionResult(boolean success, String message, Snapshot snapshot) {
-            this.success = success; this.message = message; this.snapshot = snapshot;
+            this.success = success;
+            this.message = message;
+            this.snapshot = snapshot;
         }
     }
 
@@ -487,119 +507,170 @@ public class MainActivity extends Activity {
         private static final Pattern MAC = Pattern.compile("(?i)([0-9a-f]{2}(?::[0-9a-f]{2}){5})");
         private static final Pattern IP = Pattern.compile("(\\d{1,3}(?:\\.\\d{1,3}){3})");
         private static final Pattern RSSI = Pattern.compile("(-?\\d+)/(-?\\d+)/(-?\\d+)");
-        private static final Pattern POLICY = Pattern.compile("(?i)WLAN\\s+policy\\([^)]*\\)\\s*:\\s*([0-2])");
+        private static final Pattern POLICY = Pattern.compile("(?i)WLAN\\s+policy\\([^\\r\\n]*\\)\\s*:\\s*([0-2])");
+        private static final Pattern POLICY_ALT = Pattern.compile("(?i)AccessControlList\\.Policy[^\\r\\n]*:\\s*([0-2])");
 
-        final String host, password;
-        final int port, node;
+        final String host;
+        final String password;
+        final int port;
+        final int node;
 
         TelnetRouter(String host, String password, int port, int node) {
-            this.host = host; this.password = password; this.port = port; this.node = node;
+            this.host = host;
+            this.password = password;
+            this.port = port;
+            this.node = node;
         }
 
         Snapshot probe() throws Exception {
             try (Session s = new Session(host, port, password)) {
                 s.open();
-                s.command("rtwlan node index " + node, 5000, false);
-                String wireless = s.command("rtwlan showmactable", 7000, false);
-                String arp = s.command("ip arp status", 7000, false);
-                String nodeText = s.command("rt node display", 7000, false);
+                run(s, "select WLAN", "rtwlan node index " + node, 5500, false);
+                String wireless = run(s, "read clients", "rtwlan showmactable", 8000, false);
+                String arp = run(s, "read ARP", "ip arp status", 8000, false);
+                String nodeText = run(s, "read WLAN config", "rt node display", 8000, false);
                 return parse(wireless, arp, nodeText);
             }
         }
 
-        ActionResult setBlocked(String mac, boolean blocked) {
+        ActionResult setBlocked(String mac, boolean blocked, String protectedMac) {
             try {
                 String target = normalizeMac(mac);
+                String manager = normalizeMac(protectedMac);
                 Snapshot before = probe();
-                if (before.policy == 1) return new ActionResult(false, "Allow‑List فعال است؛ اول آن را با «بازکردن اضطراری» خاموش کنید.", before);
+                if (before.policy == 1) {
+                    return new ActionResult(false, "Allow-List فعال است؛ اول «بازکردن اضطراری» را بزنید.", before);
+                }
 
                 Set<String> desired = new LinkedHashSet<>();
-                if (blocked) {
-                    if (before.policy == 2) desired.addAll(before.acl);
-                    desired.add(target);
-                } else if (before.policy == 2) {
-                    desired.addAll(before.acl);
-                    desired.remove(target);
-                }
-                return applyPolicy(desired.isEmpty() ? 0 : 2, desired);
+                if (before.policy == 2) desired.addAll(before.acl);
+                if (!manager.isEmpty()) desired.remove(manager);
+                if (blocked) desired.add(target); else desired.remove(target);
+                if (!manager.isEmpty()) desired.remove(manager);
+
+                return applyPolicy(desired.isEmpty() ? 0 : 2, desired, manager);
             } catch (Throwable t) {
                 return new ActionResult(false, clean(t), null);
             }
         }
 
-        ActionResult enableAllowOnly(Set<String> allowedMacs, String manager) {
+        ActionResult enableAllowOnly(Set<String> allowedMacs, String managerMac) {
             try {
+                String manager = normalizeMac(managerMac);
                 Set<String> desired = new LinkedHashSet<>();
-                for (String m : allowedMacs) desired.add(normalizeMac(m));
-                desired.add(normalizeMac(manager));
-                return applyPolicy(1, desired);
+                for (String m : allowedMacs) {
+                    String n = normalizeMac(m);
+                    if (MAC.matcher(n).matches()) desired.add(n);
+                }
+                if (!manager.isEmpty()) desired.add(manager);
+                if (desired.isEmpty()) return new ActionResult(false, "هیچ دستگاه مجازی برای Allow-List انتخاب نشده است.", null);
+                return applyPolicy(1, desired, manager);
             } catch (Throwable t) {
                 return new ActionResult(false, clean(t), null);
             }
         }
 
         ActionResult disableMacFilter() {
-            try { return applyPolicy(0, Collections.emptySet()); }
-            catch (Throwable t) { return new ActionResult(false, clean(t), null); }
+            try {
+                return applyPolicy(0, new LinkedHashSet<>(), "");
+            } catch (Throwable t) {
+                return new ActionResult(false, clean(t), null);
+            }
         }
 
-        private ActionResult applyPolicy(int policy, Set<String> acl) throws Exception {
+        private ActionResult applyPolicy(int policy, Set<String> acl, String protectedMac) throws Exception {
             Set<String> desired = new LinkedHashSet<>();
-            for (String m : acl) if (MAC.matcher(normalizeMac(m)).matches()) desired.add(normalizeMac(m));
+            for (String m : acl) {
+                String n = normalizeMac(m);
+                if (MAC.matcher(n).matches()) desired.add(n);
+            }
+
+            String manager = normalizeMac(protectedMac);
+            if (policy == 2 && !manager.isEmpty()) desired.remove(manager);
+            if (policy == 1 && !manager.isEmpty()) desired.add(manager);
 
             try (Session s = new Session(host, port, password)) {
                 s.open();
-                s.command("rtwlan node index " + node, 5000, false);
-                if (policy != 0 && !desired.isEmpty()) {
-                    String joined = String.join(",", desired);
-                    s.command("rt node acladdentry " + joined, 5000, false);
-                }
-                s.command("rt node accesspolicy " + policy, 5000, false);
-                s.command("rt node display", 5000, false);
-                s.command("rt node save", 6000, true);
+                run(s, "select WLAN", "rtwlan node index " + node, 5500, false);
+
+                // Fail-safe while the ACL is being replaced: filtering is temporarily disabled.
+                run(s, "disable filter before ACL replace", "rt node accesspolicy 0", 5500, false);
+
+                // TD-W8961N/TrendChip CLI: acladdentry replaces the ENTIRE list.
+                // Entries must be separated by semicolons. Empty list is represented by "".
+                String aclCommand = desired.isEmpty()
+                        ? "rt node acladdentry \"\""
+                        : "rt node acladdentry " + String.join(";", desired);
+                run(s, "replace ACL", aclCommand, 6500, false);
+
+                run(s, "apply access policy", "rt node accesspolicy " + policy, 6500, false);
+                run(s, "save WLAN config", "rt node save", 9000, true);
             }
 
-            Thread.sleep(2000);
+            Thread.sleep(1800);
             Snapshot after = probeRetry();
             boolean ok = after.policy == policy;
-            if (policy != 0) ok = ok && after.acl.containsAll(desired);
+            if (policy == 0) ok = ok && after.acl.isEmpty();
+            else ok = ok && after.acl.equals(desired);
+
             if (ok) {
-                String msg = policy == 0 ? "فیلتر MAC خاموش شد؛ اتصال همه آزاد است." :
-                        policy == 1 ? "Allow‑List واقعی فعال و Verify شد." :
-                                "Block/Unblock واقعی روی خود روتر اعمال و Verify شد.";
+                String msg = policy == 0
+                        ? "فیلتر MAC خاموش و Verify شد؛ اتصال همه آزاد است."
+                        : policy == 1
+                        ? "Allow-List واقعی فعال و از خود روتر Verify شد."
+                        : "قطع/وصل واقعی روی خود روتر اعمال و Verify شد.";
                 return new ActionResult(true, msg, after);
             }
 
-            // Fail-safe: if verification fails, reopen the network instead of leaving an uncertain filter state.
-            try { forceDisable(); } catch (Throwable ignored) {}
+            try {
+                forceDisable();
+            } catch (Throwable ignored) {}
             Snapshot safe = null;
-            try { safe = probeRetry(); } catch (Throwable ignored) {}
-            return new ActionResult(false, "Verify نهایی موفق نبود؛ برای ایمنی فیلتر MAC خاموش شد.", safe);
+            try {
+                safe = probeRetry();
+            } catch (Throwable ignored) {}
+            return new ActionResult(false,
+                    "Verify نهایی برابر نبود؛ برای جلوگیری از قطع دستگاه مدیر، فیلتر MAC به حالت امن خاموش شد.", safe);
         }
 
         private void forceDisable() throws Exception {
             try (Session s = new Session(host, port, password)) {
                 s.open();
-                s.command("rtwlan node index " + node, 5000, false);
-                s.command("rt node accesspolicy 0", 5000, false);
-                s.command("rt node save", 6000, true);
+                run(s, "safe select WLAN", "rtwlan node index " + node, 5000, false);
+                run(s, "safe disable filter", "rt node accesspolicy 0", 5000, false);
+                run(s, "safe clear ACL", "rt node acladdentry \"\"", 5500, false);
+                run(s, "safe save", "rt node save", 8500, true);
             }
-            Thread.sleep(1500);
+            Thread.sleep(1200);
         }
 
         private Snapshot probeRetry() throws Exception {
             Exception last = null;
-            for (int i = 0; i < 4; i++) {
-                try { return probe(); }
-                catch (Exception e) { last = e; Thread.sleep(900L + (i * 450L)); }
+            for (int i = 0; i < 5; i++) {
+                try {
+                    return probe();
+                } catch (Exception e) {
+                    last = e;
+                    Thread.sleep(700L + i * 450L);
+                }
             }
-            throw last == null ? new Exception("Verify timeout") : last;
+            throw last == null ? new Exception("verify timeout") : last;
+        }
+
+        private String run(Session s, String stage, String command, long timeout, boolean allowClose) throws Exception {
+            try {
+                return s.command(command, timeout, allowClose);
+            } catch (Exception e) {
+                String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                throw new Exception(stage + " | " + command + " | " + msg, e);
+            }
         }
 
         private Snapshot parse(String wireless, String arp, String nodeText) {
             Map<String, String> ipByMac = new LinkedHashMap<>();
             for (String line : arp.split("\\r?\\n")) {
-                Matcher mm = MAC.matcher(line); Matcher im = IP.matcher(line);
+                Matcher mm = MAC.matcher(line);
+                Matcher im = IP.matcher(line);
                 if (mm.find() && im.find()) {
                     String mac = normalizeMac(mm.group(1));
                     if (!"ff:ff:ff:ff:ff:ff".equals(mac)) ipByMac.put(mac, im.group(1));
@@ -615,17 +686,31 @@ public class MainActivity extends Activity {
                 if (!line.trim().toLowerCase(Locale.US).startsWith(mac)) continue;
                 Integer signal = null;
                 Matcher rm = RSSI.matcher(line);
-                if (rm.find()) try { signal = Integer.parseInt(rm.group(1)); } catch (Throwable ignored) {}
+                if (rm.find()) {
+                    try {
+                        signal = Integer.parseInt(rm.group(1));
+                    } catch (Throwable ignored) {}
+                }
                 devices.put(mac, new Device(mac, ipByMac.get(mac), signal, true));
             }
 
             Snapshot out = new Snapshot();
-            out.rawWireless = wireless; out.rawArp = arp; out.rawNode = nodeText;
+            out.rawWireless = wireless;
+            out.rawArp = arp;
+            out.rawNode = nodeText;
+
             Matcher pm = POLICY.matcher(nodeText);
-            out.policy = pm.find() ? Integer.parseInt(pm.group(1)) : 0;
+            if (pm.find()) out.policy = Integer.parseInt(pm.group(1));
+            else {
+                Matcher alt = POLICY_ALT.matcher(nodeText);
+                out.policy = alt.find() ? Integer.parseInt(alt.group(1)) : 0;
+            }
+
             out.acl = parseAcl(nodeText);
             if (out.policy != 0) {
-                for (String mac : out.acl) if (!devices.containsKey(mac)) devices.put(mac, new Device(mac, ipByMac.get(mac), null, false));
+                for (String mac : out.acl) {
+                    if (!devices.containsKey(mac)) devices.put(mac, new Device(mac, ipByMac.get(mac), null, false));
+                }
             }
             out.devices.addAll(devices.values());
             return out;
@@ -636,17 +721,26 @@ public class MainActivity extends Activity {
             String[] lines = nodeText.split("\\r?\\n");
             boolean inAcl = false;
             for (String line : lines) {
-                if (line.toLowerCase(Locale.US).contains("wlan accesscontrollist")) { inAcl = true; continue; }
+                String lower = line.toLowerCase(Locale.US);
+                if (lower.contains("wlan accesscontrollist")) {
+                    inAcl = true;
+                    addMacs(line, out);
+                    continue;
+                }
                 if (!inAcl) continue;
                 String trim = line.trim();
                 if (trim.toLowerCase(Locale.US).startsWith("wlan ")) break;
-                Matcher m = MAC.matcher(trim);
-                if (m.find()) {
-                    String mac = normalizeMac(m.group(1));
-                    if (!"ff:ff:ff:ff:ff:ff".equals(mac)) out.add(mac);
-                }
+                addMacs(line, out);
             }
             return out;
+        }
+
+        private void addMacs(String text, Set<String> out) {
+            Matcher m = MAC.matcher(text);
+            while (m.find()) {
+                String mac = normalizeMac(m.group(1));
+                if (!"ff:ff:ff:ff:ff:ff".equals(mac)) out.add(mac);
+            }
         }
 
         private String clean(Throwable t) {
@@ -654,71 +748,148 @@ public class MainActivity extends Activity {
             String l = m.toLowerCase(Locale.US);
             if (l.contains("password") || l.contains("login")) return "رمز مدیریت روتر پذیرفته نشد.";
             if (l.contains("refused")) return "اتصال Telnet رد شد.";
-            if (l.contains("timeout")) return "روتر در زمان تعیین‌شده پاسخ نداد.";
+            if (l.contains("timeout")) return "Timeout در مرحله: " + m;
             return m.isEmpty() ? "ارتباط CLI ناموفق بود." : m;
         }
 
         static class Session implements AutoCloseable {
-            final String host, password; final int port;
+            private static final Pattern PROMPT = Pattern.compile("(?im)(?:^|[\\r\\n])[^\\r\\n]{0,32}(?:>|#|\\$)\\s*$");
+            final String host;
+            final String password;
+            final int port;
             final TelnetClient telnet = new TelnetClient();
-            BufferedInputStream input; BufferedOutputStream output;
+            BufferedInputStream input;
+            BufferedOutputStream output;
 
-            Session(String host, int port, String password) { this.host = host; this.port = port; this.password = password; }
+            Session(String host, int port, String password) {
+                this.host = host;
+                this.port = port;
+                this.password = password;
+            }
 
             void open() throws Exception {
-                telnet.setConnectTimeout(5000);
-                telnet.setDefaultTimeout(5000);
+                telnet.setConnectTimeout(6000);
+                telnet.setDefaultTimeout(6000);
                 telnet.connect(host, port);
-                try { telnet.setSoTimeout(1000); } catch (Throwable ignored) {}
+                try {
+                    telnet.setSoTimeout(1200);
+                } catch (Throwable ignored) {}
                 input = new BufferedInputStream(telnet.getInputStream());
                 output = new BufferedOutputStream(telnet.getOutputStream());
-                String hello = readUntil(new String[]{"Password:", "TP-LINK>"}, 6000, false);
-                if (hello.toLowerCase(Locale.US).contains("password:")) {
+
+                String hello = readLogin(7000);
+                String lower = hello.toLowerCase(Locale.US);
+                if (lower.contains("password:")) {
                     send(password);
-                    String login = readUntil(new String[]{"TP-LINK>", "Password:"}, 6000, false);
-                    if (!login.contains("TP-LINK>")) throw new Exception("Password/login rejected");
-                } else if (!hello.contains("TP-LINK>")) throw new Exception("Login timeout");
+                    String login = readLogin(7000);
+                    String loginLower = login.toLowerCase(Locale.US);
+                    if (loginLower.contains("password:") || !hasPrompt(login)) {
+                        throw new Exception("Password/login rejected");
+                    }
+                } else if (!hasPrompt(hello)) {
+                    throw new Exception("Login timeout");
+                }
             }
 
             String command(String command, long timeout, boolean allowClose) throws Exception {
+                drain();
                 send(command);
-                return readUntil(new String[]{"TP-LINK>"}, timeout, allowClose);
+                return readCommand(timeout, allowClose);
             }
 
-            void send(String s) throws Exception {
-                output.write((s + "\r\n").getBytes(StandardCharsets.US_ASCII));
+            void send(String value) throws Exception {
+                output.write((value + "\r\n").getBytes(StandardCharsets.US_ASCII));
                 output.flush();
             }
 
-            String readUntil(String[] needles, long timeout, boolean allowClose) throws Exception {
+            private void drain() {
+                try {
+                    while (input.available() > 0) {
+                        byte[] b = new byte[Math.min(input.available(), 4096)];
+                        int n = input.read(b);
+                        if (n <= 0) break;
+                    }
+                } catch (Throwable ignored) {}
+            }
+
+            private String readLogin(long timeout) throws Exception {
                 long end = System.currentTimeMillis() + timeout;
-                long last = System.currentTimeMillis();
                 StringBuilder sb = new StringBuilder();
                 while (System.currentTimeMillis() < end) {
+                    int available = input.available();
+                    if (available > 0) {
+                        byte[] buf = new byte[Math.min(available, 4096)];
+                        int n = input.read(buf);
+                        if (n < 0) break;
+                        if (n > 0) {
+                            sb.append(new String(buf, 0, n, StandardCharsets.ISO_8859_1));
+                            String txt = sb.toString();
+                            if (txt.toLowerCase(Locale.US).contains("password:") || hasPrompt(txt)) return txt;
+                        }
+                    } else {
+                        Thread.sleep(30);
+                    }
+                }
+                throw new Exception("Login timeout");
+            }
+
+            private String readCommand(long timeout, boolean allowClose) throws Exception {
+                long end = System.currentTimeMillis() + timeout;
+                long lastData = System.currentTimeMillis();
+                boolean gotData = false;
+                StringBuilder sb = new StringBuilder();
+
+                while (System.currentTimeMillis() < end) {
                     int available;
-                    try { available = input.available(); } catch (Throwable t) { if (allowClose) return sb.toString(); else throw t; }
+                    try {
+                        available = input.available();
+                    } catch (Throwable t) {
+                        if (allowClose) return sb.toString();
+                        throw t;
+                    }
+
                     if (available > 0) {
                         byte[] buf = new byte[Math.min(available, 4096)];
                         int n;
-                        try { n = input.read(buf); } catch (Throwable t) { if (allowClose) return sb.toString(); else throw t; }
-                        if (n < 0) { if (allowClose) return sb.toString(); break; }
+                        try {
+                            n = input.read(buf);
+                        } catch (Throwable t) {
+                            if (allowClose) return sb.toString();
+                            throw t;
+                        }
+                        if (n < 0) {
+                            if (allowClose) return sb.toString();
+                            break;
+                        }
                         if (n > 0) {
+                            gotData = true;
+                            lastData = System.currentTimeMillis();
                             sb.append(new String(buf, 0, n, StandardCharsets.ISO_8859_1));
-                            last = System.currentTimeMillis();
-                            String txt = sb.toString();
-                            for (String needle : needles) if (txt.toLowerCase(Locale.US).contains(needle.toLowerCase(Locale.US))) return txt;
+                            if (hasPrompt(sb.toString())) return sb.toString();
                         }
                     } else {
-                        if (allowClose && System.currentTimeMillis() - last > 900) return sb.toString();
-                        Thread.sleep(35);
+                        long idle = System.currentTimeMillis() - lastData;
+                        // Some TD-W8961N firmware commands complete without echoing TP-LINK>.
+                        // If bytes were received and the stream becomes idle, treat the command as complete.
+                        if (gotData && idle > 650) return sb.toString();
+                        if (allowClose && idle > 900) return sb.toString();
+                        Thread.sleep(30);
                     }
                 }
+
                 if (allowClose) return sb.toString();
                 throw new Exception("CLI timeout");
             }
 
-            @Override public void close() {
-                try { if (telnet.isConnected()) telnet.disconnect(); } catch (Throwable ignored) {}
+            private boolean hasPrompt(String text) {
+                return PROMPT.matcher(text).find() || text.contains("TP-LINK>");
+            }
+
+            @Override
+            public void close() {
+                try {
+                    if (telnet.isConnected()) telnet.disconnect();
+                } catch (Throwable ignored) {}
             }
         }
     }
