@@ -11,7 +11,7 @@
         android:usesCleartextTraffic="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
-            android:name=".MainActivityV51"
+            android:name=".MainActivityV52"
             android:screenOrientation="portrait"
             android:exported="true">
             <intent-filter>
