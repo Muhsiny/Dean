@@ -1,9 +1,7 @@
-name: Build WiFi Control APK
+name: Build WiFi Control CLI v5 APK
 on:
   push:
-    branches: [ wifi-router-control ]
-  pull_request:
-    branches: [ main ]
+    branches: [ wifi-control-cli-v5 ]
   workflow_dispatch:
 jobs:
   build:
@@ -17,8 +15,18 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - run: gradle assembleDebug
+      - name: Build Android debug APK
+        run: gradle :app:assembleDebug --stacktrace
+      - name: Verify real CLI markers
+        run: |
+          grep -q '5.0.0-cli-real' app/build.gradle.kts
+          grep -q 'rtwlan showmactable' core/src/main/kotlin/org/sayeh/wificontrol/core/TelnetRouter.kt
+          grep -q 'rt node accesspolicy' core/src/main/kotlin/org/sayeh/wificontrol/core/TelnetRouter.kt
+          grep -q 'rt node save' core/src/main/kotlin/org/sayeh/wificontrol/core/TelnetRouter.kt
+          sha256sum app/build/outputs/apk/debug/app-debug.apk | tee WiFi-Control-CLI-v5.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: wifi-router-control-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: WiFi-Control-CLI-v5-Android
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            WiFi-Control-CLI-v5.sha256
