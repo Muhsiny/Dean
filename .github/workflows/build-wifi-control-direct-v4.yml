@@ -1,6 +1,10 @@
 name: Build WiFi Control Direct v4
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-wifi-control-direct-v4.yml'
   workflow_dispatch:
   issues:
     types: [opened]
@@ -70,7 +74,6 @@ jobs:
         run: |
           gradle --no-daemon :desktop:installDist --stacktrace
           if (!(Test-Path desktop/build/install/desktop/lib)) { throw 'desktop distribution missing' }
-          $cp = (Get-ChildItem desktop/build/install/desktop/lib/*.jar | ForEach-Object { $_.FullName }) -join ';'
           jpackage --type app-image --name WiFiControlDirectV4 --dest dist --input desktop/build/install/desktop/lib --main-jar desktop.jar --main-class org.sayeh.wificontrol.desktop.DesktopMainKt --win-console
           if (!(Test-Path dist/WiFiControlDirectV4/WiFiControlDirectV4.exe)) { throw 'Windows launcher missing' }
           Compress-Archive -Path dist/WiFiControlDirectV4/* -DestinationPath WiFi-Control-Direct-v4-Windows.zip
@@ -100,3 +103,5 @@ jobs:
           git add wifi-control-direct-v4-results.txt wifi-control-direct-v4-run.txt
           git commit -m 'Publish WiFi Control Direct v4 build result' || true
           git push origin main || true
+
+# direct-v4 trigger 2026-08-20
