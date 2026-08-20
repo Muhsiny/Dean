@@ -1,5 +1,10 @@
 name: Build WiFi Control CLI v5
 on:
+  push:
+    branches: [ wifi-control-cli-v5-mainline ]
+    paths:
+      - 'app/**'
+      - '.github/workflows/build-wifi-control-cli-v5.yml'
   pull_request:
     branches: [ main ]
     paths:
