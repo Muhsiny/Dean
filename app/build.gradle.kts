@@ -7,8 +7,8 @@ android {
         applicationId = "org.sayeh.wificontrol"
         minSdk = 23
         targetSdk = 35
-        versionCode = 41
-        versionName = "4.1.0-hybrid-auth"
+        versionCode = 50
+        versionName = "5.0.0-cli-real"
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
     kotlinOptions { jvmTarget = "1.8" }
