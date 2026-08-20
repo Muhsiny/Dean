@@ -1,15 +1,25 @@
 package org.sayeh.wificontrol
 
+import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.ViewGroup
+import android.webkit.CookieManager
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import org.json.JSONArray
+import org.json.JSONObject
 import org.sayeh.wificontrol.core.DirectRouter
 import java.util.Locale
 import java.util.concurrent.Executors
@@ -30,6 +40,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var filterOffBtn: Button
     private lateinit var statsBtn: Button
     private lateinit var statsText: TextView
+    private lateinit var authWeb: WebView
 
     private val prefs by lazy { getSharedPreferences("wifi_control_direct_v4", MODE_PRIVATE) }
     private val executor = Executors.newCachedThreadPool()
@@ -42,7 +53,11 @@ class MainActivity : AppCompatActivity() {
     private var currentClients: List<DirectRouter.Client> = emptyList()
     private var connected = false
     private var busy = false
+    private var authSubmitted = false
+    private var authGeneration = 0
+    private var routerEngine: DirectRouter? = null
 
+    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -64,7 +79,35 @@ class MainActivity : AppCompatActivity() {
         routerUrl.setText(prefs.getString("router_url", "http://192.168.1.1"))
         username.setText(prefs.getString("router_user", "admin"))
 
-        connectBtn.setOnClickListener { connectDirect() }
+        authWeb = WebView(this).apply {
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.loadsImagesAutomatically = false
+            settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
+            settings.allowFileAccess = false
+            settings.allowContentAccess = false
+            alpha = 0.01f
+        }
+        CookieManager.getInstance().setAcceptCookie(true)
+        findViewById<FrameLayout>(android.R.id.content).addView(
+            authWeb,
+            FrameLayout.LayoutParams(1, 1)
+        )
+        authWeb.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                if (!busy) return
+                main.postDelayed({ handleAuthPage() }, 200)
+            }
+
+            override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                if (request?.isForMainFrame == true && busy) {
+                    finishAuthFailure("صفحه Login روتر باز نشد: ${error?.description ?: "خطای شبکه"}")
+                }
+            }
+        }
+
+        connectBtn.setOnClickListener { connectWithFirmwareLogin() }
         refreshBtn.setOnClickListener { refreshClients() }
         antiQrBtn.setOnClickListener { activateAllowList() }
         filterOffBtn.setOnClickListener { disableFilter() }
@@ -74,8 +117,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        authGeneration++
         operationId.incrementAndGet()
         executor.shutdownNow()
+        try {
+            (authWeb.parent as? ViewGroup)?.removeView(authWeb)
+            authWeb.stopLoading()
+            authWeb.destroy()
+        } catch (_: Exception) { }
         super.onDestroy()
     }
 
@@ -93,24 +142,124 @@ class MainActivity : AppCompatActivity() {
         return true
     }
 
-    private fun engine(): DirectRouter = DirectRouter(
+    private fun newEngine(): DirectRouter = DirectRouter(
         baseUrl(),
         username.text.toString().trim(),
         password.text.toString(),
         prefs.getString("manager_mac", null)
     )
 
-    private fun connectDirect() {
-        if (!credentialsReady()) return
-        runOperation("در حال اتصال مستقیم HTTP به روتر…", 30000,
-            task = { engine().connectAndProbe() },
-            onSuccess = { snap ->
+    private fun engine(): DirectRouter = routerEngine ?: newEngine().also { routerEngine = it }
+
+    private fun connectWithFirmwareLogin() {
+        if (!credentialsReady() || busy) return
+        connected = false
+        routerEngine = null
+        caps = DirectRouter.Capabilities()
+        wirelessCapacity = 0
+        currentClients = emptyList()
+        authSubmitted = false
+        authGeneration++
+        val generation = authGeneration
+        setBusy(true, "در حال ورود با موتور واقعی Login خود firmware…")
+
+        try {
+            authWeb.stopLoading()
+            authWeb.clearCache(true)
+            authWeb.loadUrl(baseUrl())
+        } catch (e: Exception) {
+            finishAuthFailure("بازکردن Login ناموفق بود: ${e.message ?: e.javaClass.simpleName}")
+            return
+        }
+
+        main.postDelayed({
+            if (busy && generation == authGeneration) {
+                try { authWeb.stopLoading() } catch (_: Exception) { }
+                finishAuthFailure("Timeout: روتر طی ۲۰ ثانیه Login را کامل نکرد.")
+            }
+        }, 20_000)
+    }
+
+    private fun handleAuthPage() {
+        if (!busy) return
+        val js = """
+            (function(){try{
+              var p=document.querySelector('input[type=password]');
+              var t=(document.body?document.body.innerText:'').toLowerCase();
+              return !!p || location.href.toLowerCase().indexOf('login_security')>=0 ||
+                     (t.indexOf('username')>=0 && t.indexOf('password')>=0 && t.indexOf('login')>=0);
+            }catch(e){return false;}})();
+        """.trimIndent()
+        authWeb.evaluateJavascript(js) { raw ->
+            val isLogin = raw == "true"
+            if (isLogin) {
+                if (authSubmitted) {
+                    finishAuthFailure("روتر Login را دوباره نشان داد. نام/رمز خام نیست؛ ورود firmware تأیید نشد.")
+                } else {
+                    submitFirmwareLogin()
+                }
+            } else {
+                CookieManager.getInstance().flush()
+                status.text = "Login خود firmware پذیرفته شد؛ در حال آغاز کنترل مستقیم HTTP…"
+                probeAfterBrowserLogin()
+            }
+        }
+    }
+
+    private fun submitFirmwareLogin() {
+        authSubmitted = true
+        val user = JSONObject.quote(username.text.toString().trim())
+        val pass = JSONObject.quote(password.text.toString())
+        val js = """
+            (function(){try{
+              var u=document.querySelector('input[name="Login_Name"],input[name*=user i],input[id*=user i],input[type=text]');
+              var p=document.querySelector('input[name="Login_Pwd"],input[type=password],input[name*=pass i],input[id*=pass i]');
+              if(!u||!p)return 'NO_FORM';
+              u.value=$user; p.value=$pass;
+              ['input','change'].forEach(function(n){
+                u.dispatchEvent(new Event(n,{bubbles:true}));
+                p.dispatchEvent(new Event(n,{bubbles:true}));
+              });
+              var f=p.form||u.form||document.forms[0];
+              if(!f)return 'NO_FORM';
+              var bs=f.querySelectorAll('input[type=button],input[type=submit],button');
+              for(var i=0;i<bs.length;i++){
+                var s=((bs[i].value||bs[i].innerText||'')+'').toLowerCase();
+                if(s.indexOf('login')>=0){bs[i].click();return 'CLICKED_LOGIN_BUTTON';}
+              }
+              if(typeof checkForm==='function'){checkForm();return 'CALLED_CHECKFORM';}
+              if(bs.length){bs[0].click();return 'CLICKED_FIRST_BUTTON';}
+              return 'NO_LOGIN_BUTTON';
+            }catch(e){return 'ERR:'+e;}})();
+        """.trimIndent()
+        status.text = "نام/رمز به صفحه firmware داده شد؛ خود checkForm روتر در حال اجرا است…"
+        authWeb.evaluateJavascript(js) { raw ->
+            val r = decodeJs(raw)
+            if (r.startsWith("NO_") || r.startsWith("ERR:")) {
+                finishAuthFailure("فرم Login firmware قابل اجرا نبود: $r")
+            }
+        }
+    }
+
+    private fun probeAfterBrowserLogin() {
+        val generation = authGeneration
+        val localEngine = newEngine()
+        routerEngine = localEngine
+        executor.submit {
+            val snap = try {
+                localEngine.connectAndProbe()
+            } catch (e: Exception) {
+                DirectRouter.Snapshot(false, "کنترل مستقیم بعد از Login ناموفق: ${e.message ?: e.javaClass.simpleName}")
+            }
+            main.post {
+                if (generation != authGeneration || !busy) return@post
+                setBusy(false)
                 if (!snap.ok) {
                     connected = false
                     caps = DirectRouter.Capabilities()
                     wirelessCapacity = 0
                     currentClients = emptyList()
-                    status.text = snap.message
+                    status.text = snap.message + "\nLogin در مرورگر داخلی پذیرفته شد، اما session هنوز به موتور مستقیم منتقل نشد."
                 } else {
                     connected = true
                     caps = snap.capabilities
@@ -118,13 +267,24 @@ class MainActivity : AppCompatActivity() {
                     currentClients = snap.clients
                     status.text = buildString {
                         append(snap.message)
+                        append("\nاحراز هویت توسط JavaScript خود firmware انجام شد.")
                         if (snap.firmware.isNotBlank()) append("\nFirmware: ").append(snap.firmware)
                     }
                 }
                 renderClients()
                 updateUi()
             }
-        )
+        }
+    }
+
+    private fun finishAuthFailure(message: String) {
+        if (!busy) return
+        authGeneration++
+        try { authWeb.stopLoading() } catch (_: Exception) { }
+        routerEngine = null
+        connected = false
+        setBusy(false)
+        status.text = message
     }
 
     private fun refreshClients() {
@@ -149,7 +309,7 @@ class MainActivity : AppCompatActivity() {
 
         if (currentClients.isEmpty()) {
             clientList.addView(TextView(this).apply {
-                text = if (connected) "روتر فعلاً Wireless Client نشان نداد." else "برای خواندن دستگاه‌ها «اتصال مستقیم به روتر» را بزن."
+                text = if (connected) "روتر فعلاً Wireless Client نشان نداد." else "برای خواندن دستگاه‌ها «اتصال به روتر» را بزن."
                 setPadding(6, 12, 6, 12)
             })
             return
@@ -394,8 +554,17 @@ class MainActivity : AppCompatActivity() {
             if (operationId.compareAndSet(id, id + 1)) {
                 future?.cancel(true)
                 setBusy(false)
-                status.text = "Timeout: عملیات در ${timeoutMs / 1000} ثانیه تمام نشد. اپ دیگر در حالت «در حال ورود» گیر نمی‌ماند."
+                status.text = "Timeout: عملیات در ${timeoutMs / 1000} ثانیه تمام نشد."
             }
         }, timeoutMs)
+    }
+
+    private fun decodeJs(raw: String?): String {
+        if (raw == null || raw == "null") return ""
+        return try {
+            JSONArray("[$raw]").optString(0)
+        } catch (_: Exception) {
+            raw.trim('"').replace("\\\"", "\"").replace("\\n", "\n")
+        }
     }
 }
