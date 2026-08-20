@@ -13,4 +13,5 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 dependencies {
     implementation("com.squareup.okhttp3:okhttp:3.14.9")
     implementation("org.jsoup:jsoup:1.18.1")
+    implementation("commons-net:commons-net:3.11.1")
 }
