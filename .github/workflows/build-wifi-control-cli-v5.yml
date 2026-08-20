@@ -4,7 +4,6 @@ on:
     branches: [ main ]
     paths:
       - 'app/**'
-      - 'core/**'
       - 'build.gradle.kts'
       - 'settings.gradle.kts'
       - 'gradle.properties'
@@ -27,15 +26,17 @@ jobs:
         run: gradle :app:assembleDebug --stacktrace
       - name: Verify CLI engine markers
         run: |
-          grep -q '5.0.0-cli-real' app/build.gradle.kts
-          grep -q 'TelnetClient' core/src/main/kotlin/org/sayeh/wificontrol/core/TelnetRouter.kt
-          grep -q 'rtwlan showmactable' core/src/main/kotlin/org/sayeh/wificontrol/core/TelnetRouter.kt
-          grep -q 'rt node accesspolicy' core/src/main/kotlin/org/sayeh/wificontrol/core/TelnetRouter.kt
-          grep -q 'rt node save' core/src/main/kotlin/org/sayeh/wificontrol/core/TelnetRouter.kt
-          sha256sum app/build/outputs/apk/debug/app-debug.apk > WiFi-Control-CLI-v5.sha256
+          grep -q '5.1.0-cli-real' app/build.gradle
+          grep -q 'TelnetClient' app/src/main/java/com/sayeh/aifilm/MainActivityV51.java
+          grep -q 'rtwlan showmactable' app/src/main/java/com/sayeh/aifilm/MainActivityV51.java
+          grep -q 'rt node accesspolicy' app/src/main/java/com/sayeh/aifilm/MainActivityV51.java
+          grep -q 'rt node acladdentry' app/src/main/java/com/sayeh/aifilm/MainActivityV51.java
+          grep -q 'String.join(";", desired)' app/src/main/java/com/sayeh/aifilm/MainActivityV51.java
+          grep -q 'rt node save' app/src/main/java/com/sayeh/aifilm/MainActivityV51.java
+          sha256sum app/build/outputs/apk/debug/app-debug.apk > WiFi-Control-CLI-v5.1.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: WiFi-Control-CLI-v5-Android
+          name: WiFi-Control-CLI-v5.1-Android
           path: |
             app/build/outputs/apk/debug/app-debug.apk
-            WiFi-Control-CLI-v5.sha256
+            WiFi-Control-CLI-v5.1.sha256
