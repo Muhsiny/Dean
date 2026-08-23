@@ -1,6 +1,10 @@
 name: Build WiFi Usage Meter v1
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-wifi-usage-meter-v1.yml'
   workflow_dispatch:
   issues:
     types: [opened]
@@ -90,3 +94,5 @@ jobs:
           git add wifi-usage-meter-v1-results.txt wifi-usage-meter-v1-run.txt
           git commit -m 'Publish WiFi Usage Meter v1 build result [skip ci]' || true
           git push origin main || true
+
+# deterministic trigger 2026-08-24
