@@ -59,3 +59,21 @@ jobs:
           git add -f WiFi-Usage-Meter-v1.apk WiFi-Usage-Meter-v1.sha256
           git commit -m 'Publish WiFi Usage Meter v1 APK [skip ci]' || true
           git push origin HEAD:wifi-usage-meter-v1
+  result:
+    if: always() && (github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-USAGE-METER-CHUNKED')
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Record status
+        run: |
+          echo '${{ needs.build.result }}' > wifi-usage-meter-chunked-result.txt
+          echo "$GITHUB_RUN_ID" > wifi-usage-meter-chunked-run.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add wifi-usage-meter-chunked-result.txt wifi-usage-meter-chunked-run.txt
+          git commit -m 'Record WiFi Usage Meter build status [skip ci]' || true
+          git push origin main || true
