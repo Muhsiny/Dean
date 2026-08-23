@@ -1,0 +1,73 @@
+name: Build WiFi Usage Meter v1
+
+on:
+  workflow_dispatch:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-USAGE-METER-V1'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wifi-usage-meter-v1
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Install Android SDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Extract project
+        run: |
+          rm -rf WiFiUsageMeter
+          unzip -q wifi-usage-meter-build.zip
+          test -f WiFiUsageMeter/app/build.gradle.kts
+
+      - name: Build APK
+        working-directory: WiFiUsageMeter
+        run: gradle --no-daemon :app:assembleDebug --stacktrace
+
+      - name: Verify APK
+        run: |
+          APK=WiFiUsageMeter/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee apk-badging.txt
+          grep -q "package: name='org.wifiusagemeter.app'" apk-badging.txt
+          grep -q "versionName='1.0.0'" apk-badging.txt
+          cp "$APK" WiFi-Usage-Meter-v1.apk
+          sha256sum WiFi-Usage-Meter-v1.apk > WiFi-Usage-Meter-v1.sha256
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WiFi-Usage-Meter-v1
+          path: |
+            WiFi-Usage-Meter-v1.apk
+            WiFi-Usage-Meter-v1.sha256
+          if-no-files-found: error
+
+      - name: Publish APK to build branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add WiFi-Usage-Meter-v1.apk WiFi-Usage-Meter-v1.sha256
+          git commit -m 'Publish WiFi Usage Meter v1 APK [skip ci]' || true
+          git push origin HEAD:wifi-usage-meter-v1
