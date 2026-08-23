@@ -6,15 +6,12 @@ on:
     paths:
       - '.github/workflows/build-wifi-usage-meter-v1.yml'
   workflow_dispatch:
-  issues:
-    types: [opened]
 
 permissions:
   contents: write
 
 jobs:
   build:
-    if: github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-USAGE-METER-V1'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,10 +35,12 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
 
-      - name: Extract project
+      - name: Reassemble and verify project archive
         run: |
-          rm -rf WiFiUsageMeter
-          unzip -q wifi-usage-meter-build.zip
+          rm -rf WiFiUsageMeter wifi-usage-meter-reassembled.zip
+          cat wifi-usage-meter-parts/*.bin > wifi-usage-meter-reassembled.zip
+          unzip -t wifi-usage-meter-reassembled.zip
+          unzip -q wifi-usage-meter-reassembled.zip
           test -f WiFiUsageMeter/app/build.gradle.kts
 
       - name: Build APK
@@ -72,12 +71,12 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add WiFi-Usage-Meter-v1.apk WiFi-Usage-Meter-v1.sha256
+          git add -f WiFi-Usage-Meter-v1.apk WiFi-Usage-Meter-v1.sha256
           git commit -m 'Publish WiFi Usage Meter v1 APK [skip ci]' || true
           git push origin HEAD:wifi-usage-meter-v1
 
   publish-result:
-    if: always() && (github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-USAGE-METER-V1')
+    if: always()
     needs: [build]
     runs-on: ubuntu-latest
     steps:
@@ -95,4 +94,4 @@ jobs:
           git commit -m 'Publish WiFi Usage Meter v1 build result [skip ci]' || true
           git push origin main || true
 
-# deterministic trigger 2026-08-24
+# deterministic trigger: chunked archive v2
