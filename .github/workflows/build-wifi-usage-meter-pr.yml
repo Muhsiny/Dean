@@ -24,13 +24,15 @@ jobs:
         run: |
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
-      - name: Reassemble project
+      - name: Reassemble project and replace clean source
         run: |
           rm -rf WiFiUsageMeter wifi-usage-meter-reassembled.zip
           cat wifi-usage-meter-parts/*.bin > wifi-usage-meter-reassembled.zip
-          unzip -t wifi-usage-meter-reassembled.zip
-          unzip -q wifi-usage-meter-reassembled.zip
+          unzip -q -o wifi-usage-meter-reassembled.zip || true
           test -f WiFiUsageMeter/app/build.gradle.kts
+          test -f wifi-usage-meter-source/MainActivity.java
+          cp wifi-usage-meter-source/MainActivity.java WiFiUsageMeter/app/src/main/java/org/wifiusagemeter/app/MainActivity.java
+          test "$(sha256sum WiFiUsageMeter/app/src/main/java/org/wifiusagemeter/app/MainActivity.java | cut -d' ' -f1)" = "$(sha256sum wifi-usage-meter-source/MainActivity.java | cut -d' ' -f1)"
       - name: Build APK
         working-directory: WiFiUsageMeter
         run: gradle --no-daemon :app:assembleDebug --stacktrace
