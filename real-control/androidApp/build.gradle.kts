@@ -4,11 +4,11 @@ android {
     namespace = "org.sayeh.realwifi"
     compileSdk = 35
     defaultConfig {
-        applicationId = "org.sayeh.realwifi"
-        minSdk = 23
+        applicationId = "org.wifiusagemeter.app"
+        minSdk = 30
         targetSdk = 35
-        versionCode = 30
-        versionName = "3.0.0-real"
+        versionCode = 1
+        versionName = "1.0.0"
     }
     sourceSets.getByName("main").assets.srcDir("../shared")
     compileOptions { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
