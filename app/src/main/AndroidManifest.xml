@@ -1,14 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application
-        android:allowBackup="true"
-        android:label="استودیو سایه"
-        android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar">
-        <activity
-            android:name=".MainActivity"
-            android:screenOrientation="portrait"
-            android:exported="true">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
+    <application android:allowBackup="false" android:supportsRtl="true" android:theme="@style/AppTheme" android:icon="@drawable/ic_usage_meter" android:label="WiFi Usage Meter">
+        <activity android:name=".MainActivityV51" android:screenOrientation="portrait" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
