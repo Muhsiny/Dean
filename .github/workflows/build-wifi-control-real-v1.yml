@@ -1,6 +1,10 @@
 name: Build WiFi Control Real v1
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-wifi-control-real-v1.yml'
   workflow_dispatch:
   issues:
     types: [opened]
@@ -74,3 +78,5 @@ jobs:
           git add -f WiFi-Usage-Meter-v1.apk WiFi-Usage-Meter-v1.sha256 wifi-usage-native-run.txt wifi-usage-native-build.log 2>/dev/null || true
           git commit -m 'Publish WiFi Usage Meter APK [skip ci]' || true
           git push origin HEAD:wifi-usage-meter-native-v1 || true
+
+# trigger native usage meter 2026-08-24
