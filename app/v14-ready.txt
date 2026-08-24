@@ -1,1 +1,2 @@
 v1.4 build marker: exact app-total reconciliation + MB/GB override input
+ci-trigger=1
