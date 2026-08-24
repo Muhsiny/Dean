@@ -6,17 +6,20 @@ on:
     paths:
       - '.github/workflows/build-wifi-usage-meter-v1.yml'
   workflow_dispatch:
+  issues:
+    types: [opened]
 
 permissions:
   contents: write
 
 jobs:
   build:
+    if: github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-USAGE-METER-NATIVE-V1'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: wifi-usage-meter-v1
+          ref: wifi-usage-meter-native-v1
           fetch-depth: 0
 
       - uses: actions/setup-java@v4
@@ -28,33 +31,26 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.11.1'
+          gradle-version: '8.9'
 
       - name: Install Android SDK
         run: |
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
 
-      - name: Reassemble and verify project archive
-        run: |
-          rm -rf WiFiUsageMeter wifi-usage-meter-reassembled.zip
-          cat wifi-usage-meter-parts/*.bin > wifi-usage-meter-reassembled.zip
-          unzip -t wifi-usage-meter-reassembled.zip
-          unzip -q wifi-usage-meter-reassembled.zip
-          test -f WiFiUsageMeter/app/build.gradle.kts
-
-      - name: Build APK
-        working-directory: WiFiUsageMeter
-        run: gradle --no-daemon :app:assembleDebug --stacktrace
+      - name: Build native APK
+        working-directory: real-control
+        run: gradle --no-daemon :androidApp:assembleDebug --stacktrace
 
       - name: Verify APK
         run: |
-          APK=WiFiUsageMeter/app/build/outputs/apk/debug/app-debug.apk
+          APK=real-control/androidApp/build/outputs/apk/debug/androidApp-debug.apk
           test -s "$APK"
           unzip -t "$APK" >/dev/null
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee apk-badging.txt
           grep -q "package: name='org.wifiusagemeter.app'" apk-badging.txt
           grep -q "versionName='1.0.0'" apk-badging.txt
+          grep -q "application-label:'WiFi Usage Meter'" apk-badging.txt
           cp "$APK" WiFi-Usage-Meter-v1.apk
           sha256sum WiFi-Usage-Meter-v1.apk > WiFi-Usage-Meter-v1.sha256
 
@@ -67,16 +63,16 @@ jobs:
             WiFi-Usage-Meter-v1.sha256
           if-no-files-found: error
 
-      - name: Publish APK to build branch
+      - name: Publish APK to app branch
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -f WiFi-Usage-Meter-v1.apk WiFi-Usage-Meter-v1.sha256
           git commit -m 'Publish WiFi Usage Meter v1 APK [skip ci]' || true
-          git push origin HEAD:wifi-usage-meter-v1
+          git push origin HEAD:wifi-usage-meter-native-v1
 
   publish-result:
-    if: always()
+    if: always() && (github.event_name != 'issues' || github.event.issue.title == 'TRIGGER-WIFI-USAGE-METER-NATIVE-V1')
     needs: [build]
     runs-on: ubuntu-latest
     steps:
@@ -93,5 +89,3 @@ jobs:
           git add wifi-usage-meter-v1-results.txt wifi-usage-meter-v1-run.txt
           git commit -m 'Publish WiFi Usage Meter v1 build result [skip ci]' || true
           git push origin main || true
-
-# deterministic trigger: chunked archive v2
