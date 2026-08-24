@@ -1,8 +1,8 @@
 package com.sayeh.aifilm;
 
-import org.sayeh.realwifi.UsageMeterActivity;
+import org.sayeh.realwifi.UsageMeterActivityV13;
 
-public class MainActivityV51 extends UsageMeterActivity {
+public class MainActivityV51 extends UsageMeterActivityV13 {
     /* CI compatibility markers only:
        TelnetClient
        rt node acladdentry
