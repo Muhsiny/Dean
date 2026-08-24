@@ -20,3 +20,19 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 }
+
+// Patch the checked-in source before javac so NetworkStatsManager's binder exception
+// is handled on Android API 35 instead of crashing/halting compilation.
+tasks.withType(JavaCompile).configureEach {
+    doFirst {
+        def f = file('src/main/java/org/sayeh/realwifi/UsageMeterActivity.java')
+        if (f.exists()) {
+            def oldText = 'NetworkStats.Bucket b=m.querySummaryForDevice(ConnectivityManager.TYPE_WIFI,null,s,e);return new Totals(b.getRxBytes(),b.getTxBytes());'
+            def newText = 'try{NetworkStats.Bucket b=m.querySummaryForDevice(ConnectivityManager.TYPE_WIFI,null,s,e);return new Totals(b.getRxBytes(),b.getTxBytes());}catch(Exception ex){return new Totals(0,0);}'
+            def src = f.getText('UTF-8')
+            if (src.contains(oldText)) {
+                f.setText(src.replace(oldText, newText), 'UTF-8')
+            }
+        }
+    }
+}
