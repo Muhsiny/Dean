@@ -11,12 +11,119 @@ android {
         applicationId 'org.wifiusagemeter.app'
         minSdk 30
         targetSdk 35
-        versionCode 5
-        versionName '1.3.1'
+        versionCode 6
+        versionName '1.4.0'
     }
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+// v1.4 final fixes: the visible per-app amounts reconcile exactly to the displayed
+// device total, and private display overrides accept both MB and GB values.
+tasks.withType(JavaCompile).configureEach {
+    doFirst {
+        def f = file('src/main/java/org/sayeh/realwifi/UsageMeterActivityV13.java')
+        if (!f.exists()) return
+        def src = f.getText('UTF-8')
+
+        def oldApps = '''        }else{
+            long max=1;
+            for(AppUse a:data.apps) max=Math.max(max,(long)(a.totals.total()*data.scale));
+            int shownCount=Math.min(12,data.apps.size());
+            for(int i=0;i<shownCount;i++)root.addView(appRow(data.apps.get(i),data.scale,max));
+        }'''
+        def newApps = '''        }else{
+            long target=data.shown.total();
+            long appRawSum=0;
+            for(AppUse a:data.apps) appRawSum+=Math.max(0,a.totals.total());
+            int regularCount=Math.min(11,data.apps.size());
+            long[] amounts=new long[regularCount];
+            long assigned=0,max=1;
+            for(int i=0;i<regularCount;i++){
+                long v;
+                if(i==regularCount-1 && data.apps.size()<=regularCount){
+                    v=Math.max(0,target-assigned);
+                }else if(appRawSum<=0 || target<=0){
+                    v=0;
+                }else{
+                    v=(long)Math.floor(target*(data.apps.get(i).totals.total()/(double)appRawSum));
+                }
+                amounts[i]=Math.max(0,v);assigned+=amounts[i];max=Math.max(max,amounts[i]);
+            }
+            long other=data.apps.size()>regularCount?Math.max(0,target-assigned):0;
+            max=Math.max(max,other);
+            for(int i=0;i<regularCount;i++)root.addView(appRow(data.apps.get(i),amounts[i],max));
+            if(other>0){
+                AppUse rest=new AppUse(-1,null,"سایر برنامه‌ها و سیستم",null,new Totals(other,0));
+                root.addView(appRow(rest,other,max));
+            }
+        }'''
+        if (!src.contains(oldApps)) throw new GradleException('v1.4 app reconciliation marker not found')
+        src = src.replace(oldApps,newApps)
+
+        def oldRow = '''    private View appRow(AppUse a,double scale,long maxShown){
+        LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(6),dp(10),dp(6),dp(10));
+        ImageView icon=new ImageView(this);if(a.icon!=null)icon.setImageDrawable(a.icon);else icon.setImageDrawable(null);row.addView(icon,new LinearLayout.LayoutParams(dp(48),dp(48)));
+        LinearLayout mid=new LinearLayout(this);mid.setOrientation(LinearLayout.VERTICAL);mid.setPadding(dp(10),0,dp(10),0);
+        TextView name=new TextView(this);name.setText(a.label);name.setTextSize(17);name.setTextColor(0xFF263238);mid.addView(name);
+        long shown=Math.round(a.totals.total()*scale);ProgressBarView bar=new ProgressBarView(this,maxShown==0?0:shown/(float)maxShown);mid.addView(bar,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(10)));
+        row.addView(mid,new LinearLayout.LayoutParams(0,dp(62),1f));
+        TextView amount=new TextView(this);amount.setText(fmt(shown));amount.setTextSize(15);amount.setTextColor(0xFF667B82);amount.setGravity(Gravity.CENTER);row.addView(amount,new LinearLayout.LayoutParams(dp(92),dp(54)));
+        View line=new View(this);line.setBackgroundColor(0xFFE5ECEF);
+        LinearLayout wrap=new LinearLayout(this);wrap.setOrientation(LinearLayout.VERTICAL);wrap.addView(row);wrap.addView(line,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,1));return wrap;
+    }'''
+        def newRow = '''    private View appRow(AppUse a,long shown,long maxShown){
+        LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(6),dp(10),dp(6),dp(10));
+        ImageView icon=new ImageView(this);if(a.icon!=null)icon.setImageDrawable(a.icon);else icon.setImageDrawable(null);row.addView(icon,new LinearLayout.LayoutParams(dp(48),dp(48)));
+        LinearLayout mid=new LinearLayout(this);mid.setOrientation(LinearLayout.VERTICAL);mid.setPadding(dp(10),0,dp(10),0);
+        TextView name=new TextView(this);name.setText(a.label);name.setTextSize(17);name.setTextColor(0xFF263238);mid.addView(name);
+        ProgressBarView bar=new ProgressBarView(this,maxShown==0?0:shown/(float)maxShown);mid.addView(bar,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(10)));
+        row.addView(mid,new LinearLayout.LayoutParams(0,dp(62),1f));
+        TextView amount=new TextView(this);amount.setText(fmt(shown));amount.setTextSize(15);amount.setTextColor(0xFF667B82);amount.setGravity(Gravity.CENTER);row.addView(amount,new LinearLayout.LayoutParams(dp(92),dp(54)));
+        View line=new View(this);line.setBackgroundColor(0xFFE5ECEF);
+        LinearLayout wrap=new LinearLayout(this);wrap.setOrientation(LinearLayout.VERTICAL);wrap.addView(row);wrap.addView(line,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,1));return wrap;
+    }'''
+        if (!src.contains(oldRow)) throw new GradleException('v1.4 app-row marker not found')
+        src = src.replace(oldRow,newRow)
+
+        src = src.replace('امروز به MB — خالی = واقعی','امروز — مثال: 850 MB یا 2.5 GB — خالی = واقعی')
+        src = src.replace('هفته به MB — خالی = واقعی','هفته — مثال: 850 MB یا 2.5 GB — خالی = واقعی')
+        src = src.replace('ماه به MB — خالی = واقعی','ماه — مثال: 850 MB یا 2.5 GB — خالی = واقعی')
+
+        def oldOverride = '''    private String overrideText(String net,String period){long x=p.getLong("display_"+net+"_"+period,-1);return x<0?"":String.format(Locale.US,"%.1f",x/(1024d*1024d));}
+    private void saveOverride(String net,String period,String value){String k="display_"+net+"_"+period;if(value==null||value.trim().isEmpty()){p.edit().remove(k).apply();return;}try{double mb=Double.parseDouble(value.trim());p.edit().putLong(k,(long)Math.max(0,mb*1024d*1024d)).apply();}catch(Exception ignored){}}'''
+        def newOverride = '''    private String overrideText(String net,String period){
+        long x=p.getLong("display_"+net+"_"+period,-1);if(x<0)return "";
+        double gb=x/(1024d*1024d*1024d);
+        if(gb>=1d)return String.format(Locale.US,"%.2f GB",gb);
+        return String.format(Locale.US,"%.1f MB",x/(1024d*1024d));
+    }
+    private void saveOverride(String net,String period,String value){
+        String k="display_"+net+"_"+period;
+        if(value==null||value.trim().isEmpty()){p.edit().remove(k).apply();return;}
+        try{
+            String raw=value.trim().toUpperCase(Locale.US).replace(" ","").replace(',','.');
+            double multiplier=1024d*1024d;
+            if(raw.endsWith("GB")){multiplier*=1024d;raw=raw.substring(0,raw.length()-2);}
+            else if(raw.endsWith("MB")){raw=raw.substring(0,raw.length()-2);}
+            else if(raw.endsWith("G")){multiplier*=1024d;raw=raw.substring(0,raw.length()-1);}
+            else if(raw.endsWith("M")){raw=raw.substring(0,raw.length()-1);}
+            double number=Double.parseDouble(raw);
+            long bytes=(long)Math.max(0,Math.round(number*multiplier));
+            p.edit().putLong(k,bytes).apply();
+        }catch(Exception ex){toast("مقدار را مثل 850 MB یا 2.5 GB وارد کنید");}
+    }'''
+        if (!src.contains(oldOverride)) throw new GradleException('v1.4 override marker not found')
+        src = src.replace(oldOverride,newOverride)
+
+        def oldNum = '''    private EditText numInput(String h,String v){EditText e=input(h);e.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);e.setText(v);return e;}'''
+        def newNum = '''    private EditText numInput(String h,String v){EditText e=input(h);e.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);e.setSingleLine(true);e.setText(v);return e;}'''
+        if (!src.contains(oldNum)) throw new GradleException('v1.4 input marker not found')
+        src = src.replace(oldNum,newNum)
+
+        f.setText(src,'UTF-8')
     }
 }
