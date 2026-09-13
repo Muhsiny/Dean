@@ -20,18 +20,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 4
     steps:
-      - name: Keep Beheshti University 4.3 warm
+      - name: Keep Beheshti University 4.4 warm
         shell: bash
         run: |
           set -euo pipefail
           URL='https://beheshti-university-prod-v410.onrender.com/api/health'
           for attempt in 1 2 3 4 5 6; do
             body="$(curl -fsS --connect-timeout 15 --max-time 60 "$URL" || true)"
-            if printf '%s' "$body" | grep -q '"service":"beheshti-university"' && printf '%s' "$body" | grep -q '"version":"4.3.0"'; then
-              echo 'Beheshti University 4.3 is warm and healthy.'
+            if printf '%s' "$body" | grep -q '"service":"beheshti-university"' && printf '%s' "$body" | grep -q '"version":"4.4.0"'; then
+              echo 'Beheshti University 4.4 is warm and healthy.'
               exit 0
             fi
             sleep 10
           done
-          echo 'University health endpoint did not return the expected 4.3.0 response.' >&2
+          echo 'University health endpoint did not return the expected 4.4.0 response.' >&2
           exit 1
