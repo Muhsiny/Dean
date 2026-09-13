@@ -1,16 +1,15 @@
 {
   "name": "beheshti-academy",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "start": "node server.js",
-    "check": "node --check server.js && node build.js"
+    "build": "node --check public/curriculum-v3.js && node --check public/app-v3.js && node build.js",
+    "audit:prod": "npm audit --omit=dev --audit-level=moderate"
   },
   "engines": {"node": ">=20"},
-  "dependencies": {
+  "devDependencies": {
     "@neondatabase/neon-js": "0.7.0-beta",
-    "esbuild": "^0.25.0",
-    "express": "^4.21.2"
+    "esbuild": "0.28.2"
   }
 }
