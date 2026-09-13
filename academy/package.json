@@ -1,10 +1,10 @@
 {
   "name": "beheshti-academy",
-  "version": "5.0.0",
+  "version": "6.0.0",
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "build": "node --check public/curriculum-v3.js && node --check public/course-v5-extra.js && node --check public/readings-v5.js && node build.js && node --check public/app-v5.bundle.js",
+    "build": "node --check public/curriculum-v3.js && node --check public/course-v5-extra.js && node --check public/readings-v5.js && node --check public/lesson-graph-v6.js && node --check public/academy-v6.js && node build.js && node --check public/app-v5.bundle.js",
     "audit:prod": "npm audit --omit=dev --audit-level=moderate"
   },
   "engines": {"node": ">=20"},
