@@ -6,6 +6,7 @@ import {fileURLToPath} from 'node:url';
 import pg from 'pg';
 const Pool=pg.Pool;
 const root=path.dirname(fileURLToPath(import.meta.url));
+const staticRoot=path.join(root,'dist');
 const pool=new Pool({connectionString:process.env.DATABASE_URL,ssl:{rejectUnauthorized:false}});
 const PORT=process.env.PORT||10000;
 const defaults={siteTitle:'خبرگزاری سایه',brandName:'SAYEH NEWS',tagline:'پنهان از نگاه‌ها، مسلط بر رویدادها',newsroomLabel:'تحریریه',homeTitle:'پنهان از نگاه‌ها',newsTitle:'آخرین خبرها',analysisTitle:'تحلیل رویدادها',archiveTitle:'آرشیف خبرها',englishTitle:'English News',englishDeskLabel:'English Desk',navHome:'خانه',navNews:'خبرها',navAnalysis:'تحلیل',navArchive:'آرشیف',navEnglish:'English',breakingLabel:'خبر فوری',footerText:'تمام حقوق این خبرگزاری برای سایه محفوظ می‌باشد.',footerYear:'۲۰۲۳',searchPlaceholder:'جست‌وجوی خبر و تحلیل...',defaultLanguage:'دری',breakingBar:true,watermark:true,versioning:true,autoShare:true,viewCountThreshold:500,archiveDays:20,visualRequired:true,sourceMonitorEnabled:true,forceArianaSource:true,primaryIntervalMinutes:5,primaryItemsPerCycle:3,secondarySourcesPerCycle:1,secondaryHighItemsPerCycle:3,secondaryNormalItemsPerCycle:2,autoWordLimit:1000,openverseFallback:true,bbcReplaceSourceImage:true,logoUrl:'/resources/sayeh-news-logo.png'};
@@ -28,7 +29,7 @@ async function validSession(t){if(!t)return null;const r=await pool.query('selec
 async function pub(kind){let a=(await allArticles()).filter(x=>x.status==='published'||!x.status);if(kind==='analysis')a=a.filter(x=>x.section==='analysis'||x.category==='تحلیل');if(kind==='english')a=a.filter(x=>x.language==='English'||x.section==='english');if(kind==='archive')a=a.filter(x=>x.archived);return a}
 async function logEvent(v,e,a){await pool.query('insert into sayeh_events(visitor_id,event,article_id,created_at) values($1,$2,$3,$4)',[v?.userId||'',e,a||'',Date.now()]).catch(()=>{})}
 function mime(f){if(f.endsWith('.js'))return'application/javascript; charset=utf-8';if(f.endsWith('.css'))return'text/css; charset=utf-8';if(f.endsWith('.png'))return'image/png';if(f.endsWith('.webmanifest'))return'application/manifest+json';return'text/html; charset=utf-8'}
-function staticFile(res,rel){const f=path.join(root,rel);if(!f.startsWith(root)||!fs.existsSync(f)||fs.statSync(f).isDirectory())return false;res.writeHead(200,{'content-type':mime(f),'cache-control':rel.includes('assets/')?'public, max-age=31536000, immutable':'public, max-age=300'});fs.createReadStream(f).pipe(res);return true}
+function staticFile(res,rel){const f=path.join(staticRoot,rel);if(!f.startsWith(staticRoot)||!fs.existsSync(f)||fs.statSync(f).isDirectory())return false;res.writeHead(200,{'content-type':mime(f),'cache-control':rel.includes('assets/')?'public, max-age=31536000, immutable':'public, max-age=300'});fs.createReadStream(f).pipe(res);return true}
 const app=http.createServer(async(req,res)=>{try{const u=new URL(req.url,'http://x'),p=u.pathname;
   if(p==='/health')return send(res,{ok:true,service:'sayeh-independent',database:'neon'});
   if(p==='/migration/status'&&req.method==='GET'){
