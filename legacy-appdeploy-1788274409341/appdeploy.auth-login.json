@@ -1,0 +1,14 @@
+{
+  "methods": [
+    "google"
+  ],
+  "headline": "ثبت‌نام / ورود با ایمیل",
+  "style": {
+    "mode": "dark",
+    "accentColor": "#0f5a3d",
+    "backgroundColor": "#09090b",
+    "panelColor": "#18181b",
+    "textColor": "#f4f4f5",
+    "borderRadius": 18
+  }
+}
