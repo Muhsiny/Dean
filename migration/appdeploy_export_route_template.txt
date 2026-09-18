@@ -1,0 +1,20 @@
+Temporary AppDeploy route template for SAYEH migration.
+Replace __EXPORT_TOKEN__ only at deploy time. Remove the route by applying the saved prior AppDeploy version immediately after migration.
+
+'GET /diagnostics/migration-export':[async({query})=>{
+ if(query.token!=='__EXPORT_TOKEN__')return error('forbidden',403);
+ const allowed=new Set(['news','news_delete_tombstones','settings','socials','sources','staff_members','system_migrations','visitor_events_v3','news_index_v1','analysis_desk_runs_v1','analysis_drafts_v1','analysis_desk_state_v1','news_translations_v1','video_bulletins_v1','entity_subscriptions']);
+ if(query.kind==='table'){
+   const table=query.table||'';if(!allowed.has(table))return error('table_not_allowed',400);
+   const limit=Math.max(1,Math.min(100,Number(query.limit||100)));
+   const page=await db.list(table,{limit,...(query.next?{nextToken:query.next}:{})});
+   return json({kind:'table',table,items:page.items,nextToken:page.nextToken||null});
+ }
+ if(query.kind==='storage'){
+   const limit=Math.max(1,Math.min(200,Number(query.limit||200)));
+   const page=await storage.list({limit,...(query.next?{nextToken:query.next}:{})});
+   const items=page.paths.length?await storage.url(page.paths):[];
+   return json({kind:'storage',items,nextToken:page.nextToken||null});
+ }
+ return error('invalid_kind',400);
+}],
