@@ -6,8 +6,8 @@ const UPSTREAM = process.env.UPSTREAM_ORIGIN || 'https://beheshti-university-pro
 const HOTFIX = readFileSync(new URL('./edge-assets/home-4293.css', import.meta.url),'utf8');
 const HERO_JS = readFileSync(new URL('./edge-assets/home-hero-4293.js', import.meta.url),'utf8');
 const CERT_JS = readFileSync(new URL('./edge-assets/home-certificate-4293.js', import.meta.url),'utf8');
-const BISMILLAH_URL = 'https://cdn.creativeclaw.co/u/7d931a3c/images/282df546-d39b-43bc-85b3-1e1fc2ae23dc.webp';
-const OFFICE_URL = 'https://images.unsplash.com/photo-1770053506723-c96a4379873b?auto=format&fit=crop&w=1800&q=86';
+const BISMILLAH_URL = 'https://dl.shut.ir/public/file/2023/3/23/%D8%B9%DA%A9%D8%B3-%D8%A8%D8%B3%D9%85-%D8%A7%D9%84%D9%84%D9%87-%D8%A7%D9%84%D8%B1%D8%AD%D9%85%D9%86-%D8%A7%D9%84%D8%B1%D8%AD%DB%8C%D9%85.png';
+const OFFICE_URL = 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1800&q=86';
 
 const hop = new Set(['connection','keep-alive','proxy-authenticate','proxy-authorization','te','trailers','transfer-encoding','upgrade','content-length','content-encoding']);
 const assetCache = new Map();
@@ -28,7 +28,7 @@ function copyHeaders(from,res,req){
   }
   const setCookies=from.headers.getSetCookie?.()||[];
   if(setCookies.length) res.setHeader('set-cookie',setCookies);
-  res.setHeader('x-beheshti-hotfix','4.29.3');
+  res.setHeader('x-beheshti-hotfix','4.29.5');
 }
 
 async function serveAsset(res,key,url,type){
@@ -54,8 +54,8 @@ async function serveAsset(res,key,url,type){
 const server=http.createServer(async(req,res)=>{
   try{
     const edgeUrl=new URL(req.url||'/','https://edge.invalid');
-    if(edgeUrl.pathname==='/edge-assets/bismillah.webp'){
-      await serveAsset(res,'bismillah',BISMILLAH_URL,'image/webp');
+    if(edgeUrl.pathname==='/edge-assets/bismillah.png'){
+      await serveAsset(res,'bismillah',BISMILLAH_URL,'image/png');
       return;
     }
     if(edgeUrl.pathname==='/edge-assets/hero-office.jpg'){
