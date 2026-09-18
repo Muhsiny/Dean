@@ -1,0 +1,24 @@
+{
+  "id": "./",
+  "name": "SAYEH NEWS | خبرگزاری سایه",
+  "short_name": "SAYEH NEWS",
+  "description": "پنهان از نگاه‌ها، مسلط بر رویدادها",
+  "lang": "fa",
+  "dir": "rtl",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#09090b",
+  "theme_color": "#0f5132",
+  "categories": ["news", "magazines"],
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "./resources/sayeh-news-logo.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./resources/sayeh-news-logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    { "name": "آخرین خبرها", "short_name": "خبرها", "url": "./", "icons": [{ "src": "./resources/sayeh-news-logo.png", "sizes": "192x192", "type": "image/png" }] }
+  ]
+}
