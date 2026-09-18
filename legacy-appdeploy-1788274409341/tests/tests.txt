@@ -1,0 +1,67 @@
+# Tests
+
+## Test 1 - One-click public entry opens the newsroom [sanity]
+Viewport: desktop (1280x800)
+Covers: one-click anonymous entry, browser-stable visitor identity, consolidated public bootstrap for visitor/feed/settings, entry-click tracking, successful-entry tracking, seven-language selector, immediate PWA install suggestion when the browser declares the app installable, fast repeat navigation through the PWA shell cache
+Description: Verifies a public visitor enters without email, password, verification code, popup or a second confirmation.
+Steps:
+1. Navigate to the app with no active visitor session
+2. Confirm the Language selector contains دری, پښتو, English, العربية, اردو, Türkçe and Français
+3. Select دری and confirm the screen shows one visible «ورود» button and no email, password, verification-code or «خیر» control
+4. Press «ورود» once
+5. Confirm the newsroom opens without any authentication popup, refresh once, and confirm the existing session returns directly to a populated newsroom without reopening the entry gate
+6. In an installable browser, confirm SAYEH NEWS surfaces its install suggestion and that the «دانلود اپ» control no longer fails because the visitor is anonymous
+Expected: One click creates the anonymous visitor session and opens the newsroom; subsequent session startup receives visitor, feed and settings through one consolidated bootstrap rather than serial public requests, repeat navigation can use the cached PWA shell while refreshing in the background, the click and successful entry remain separately countable in owner analytics, and an eligible browser can proceed to the real PWA installation flow without an email-auth analytics error.
+
+## Test 2 - Failed anonymous session stays on the one-click gate
+Viewport: mobile (375x667)
+Covers: anonymous-entry failure guardrail, no email/OAuth fallback, visible retry state
+Description: Verifies a backend session failure does not reopen the old email or popup login flow.
+QA Faults:
+```json
+[
+  {"method":"POST","path":"/api/visitor-auth/anonymous","status":500,"body_json":{"error":"simulated_failure"}}
+]
+```
+Steps:
+1. Open the app with no active visitor session
+2. Press the single entry button
+3. Confirm a visible entry error appears
+4. Confirm the same one-click gate remains visible with no email, password, code input or authentication popup
+Expected: Entry remains a one-click anonymous flow even when session creation fails.
+
+## Test 3 - Global word search, newsroom and translation remain functional
+Viewport: desktop (1280x800)
+Covers: global published-news and archive search, Persian/Arabic character normalization, existing authenticated visitor compatibility, news feed, source-original lead-image delivery without arbitrary quality gates, translation, article view, source-grounded Afghanistan editorial tone, modal close
+Description: Ensures the newsroom remains functional and Afghanistan coverage stays factual and professional: verifiable positive official actions may be stated clearly, while criticism and allegations are not turned into unsupported assertions.
+Steps:
+1. Start a non-incognito authenticated QA session using QA actor C
+2. Continue through the entry gate, note a distinctive word of at least 3 characters from a visible headline, type it in the search box and confirm matching results are returned even though search is not limited to the currently loaded 24-card feed; where applicable, replace Persian ی/ک with Arabic ي/ك in the same term and confirm the same matching story remains discoverable
+3. Clear the search, navigate to News and open a visible Afghanistan story and confirm its lead image is delivered from the source-provided image without forced resizing, thumbnail substitution, or an arbitrary minimum/maximum quality gate; confirm the copy is written as factual newsroom reporting rather than promotional slogans and any criticism or allegations remain attributed
+4. Select English and confirm the visible story translates instead of remaining on “Loading...”
+5. Switch back to دری and confirm the same story updates without closing
+6. Close the story and confirm the newsroom remains usable
+Expected: Internal search queries the full published newsroom and archive rather than only the currently loaded tab, normalizes Persian/Arabic character variants, and existing feed, translation and article behavior remain functional; imported source images retain the quality supplied by the source without an extra newsroom pixel or file-size threshold; Afghanistan coverage is professional and source-grounded, does not suppress verifiable positive actions when they are present, and does not add unsupported praise or accusations.
+
+## Test 4 - Backend regression includes public RSS/share and visitor routes
+Viewport: desktop (1280x800)
+Covers: public RSS feed using https://sayeh-news.un-beha.org as the canonical public domain, dedicated Facebook photo/news RSS feed, explicit Facebook title/body separator for Zapier, dedicated Facebook video RSS feeds for Zapier including isolated v2, internally rendered free six-hour video bulletins, safe Video Desk diagnostics, canonical-news-table Video Desk fallback independent of the public visual index, stable video-file redirect for stored MP4 delivery, explicit stable sayehImageUrl and sayehVideoUrl fields, stable RSS image redirect, per-story social-share route, Video Desk compatibility callback and Facebook-confirm integration routes, consolidated public bootstrap, legacy, visitor-auth and custom-public backend routes without real-data mutation
+Description: Exercises every declared route with safe reads plus empty or missing-record requests so RSS/social distribution and authentication paths are covered without sending email or changing newsroom data.
+Steps:
+1. Start a non-incognito authenticated QA session using QA actor A
+2. Continue to the newsroom
+3. Click “Run backend regression”
+4. Wait for “Routes exercised: 66/66” and read the complete text after “VIDEO_DIAG” and after “PENDING_JOB”
+5. In your final test summary, reproduce exactly the VIDEO_DIAG JSON and then what follows PENDING_JOB: the complete JSON object when a pending render job exists, or the literal value null; then confirm no test article, source, staff member or social connection was created
+Expected: All 66 declared routes are exercised, including the consolidated public bootstrap, global public search, anonymous-session and public entry-click routes; VIDEO_DIAG safely reports the current/latest Video Desk state including status, basisCount, hasAudio, hasVideo, lastError and renderAttempts without secrets; the current PENDING_JOB result is reported exactly as either its JSON object or literal null when no render job is pending; the no-cache Facebook photo/news RSS route and media fields remain stable while its description includes an explicit paragraph/separator boundary so Zapier cannot visually fuse the title into the body; Video Desk may use recent source-grounded records directly from the canonical news table when the public/editor index cannot provide a basis, without publishing review-only records publicly; the original and isolated v2 video-only RSS endpoints expose completed internally rendered bulletins with stable SAYEH video URLs that redirect to stored MP4 files for Zapier, while an empty completed-video queue remains valid; Video Desk confirmation can attach the final Facebook link to the site, and newsroom data remains unchanged.
+
+## Test 5 - Repeated-image duplicates collapse while distinct stories remain
+Viewport: mobile (375x667)
+Covers: Home duplicate suppression, repeated lead-image signal, distinct-story preservation
+Description: Verifies duplicate suppression on the visible newsroom feed without depending on a particular current headline or leaving a search filter active.
+Steps:
+1. Use an authenticated QA visitor session to reach Home and keep the search field completely empty
+2. Inspect the visible news cards and confirm there are not two cards that reuse the same lead image while also referring to the same actor/place/event, even when their titles are rewritten differently
+3. Confirm distinct stories with different event meaning remain visible rather than being removed merely for sharing a source
+4. Open one visible story and then close it, confirming the feed remains populated and usable with the search field still empty
+Expected: With no search filter active, the newsroom feed remains populated, keeps one card per true duplicate event, preserves distinct stories, and remains usable after opening and closing a story.
