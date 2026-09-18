@@ -1,1 +1,8 @@
-{"name":"sayeh-news-independent","private":true,"version":"1.0.2","type":"module","scripts":{"start":"node server.js"},"dependencies":{"pg":"^8.13.1"}}
+{
+  "name":"sayeh-news-full-independent",
+  "private":true,
+  "version":"2.0.0",
+  "type":"module",
+  "scripts":{"build":"vite build","start":"node server.js"},
+  "dependencies":{"@vitejs/plugin-react":"^4.3.0","autoprefixer":"^10.4.0","lucide-react":"^0.469.0","pg":"^8.13.1","postcss":"^8.4.0","react":"^19.0.0","react-dom":"^19.0.0","tailwindcss":"^3.4.0","vite":"^6.0.0"}
+}
