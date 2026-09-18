@@ -29,7 +29,7 @@ function appendOnce(file,addition){
     return true;
   }catch{return false}
 }
-if(process.env.BEHESHTI_EDGE_HOTFIX==='1' && process.env.npm_lifecycle_event==='start'){
+if(process.env.npm_lifecycle_event==='start'){
   const root=process.cwd();
   const cssPath=findFile('beheshti.css',root);
   const jsPath=findFile('app.js',root);
