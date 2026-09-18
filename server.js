@@ -45,6 +45,20 @@ const app=http.createServer(async(req,res)=>{try{const u=new URL(req.url,'http:/
       const summary={articles:articleCount,entities:entityCount,settings:Boolean(incomingSettings)};await client.query('insert into sayeh_migrations(source,imported_at,summary) values($1,$2,$3::jsonb)',[String(b.source||'appdeploy'),Date.now(),JSON.stringify(summary)]);await client.query('commit');return send(res,{ok:true,...summary});
     }catch(e){await client.query('rollback');throw e}finally{client.release()}
   }
+  if(p==='/migration/pull-public'&&req.method==='POST'){
+    if(!process.env.MIGRATION_TOKEN||req.headers['x-migration-token']!==process.env.MIGRATION_TOKEN)return send(res,{error:'forbidden'},403);
+    const base='https://api-v2.appdeploy.ai/app/605a5f030a6d2cec77';
+    const post=async(path,payload)=>{const rr=await fetch(base+path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});const txt=await rr.text();if(!rr.ok)throw new Error('old_app_'+rr.status+':'+txt.slice(0,180));return JSON.parse(txt)};
+    const visitorId=crypto.randomUUID();
+    const session=await post('/api/visitor-auth/anonymous',{visitorId});
+    const sessionToken=session.sessionToken;if(!sessionToken)throw new Error('old_app_missing_session');
+    const boot=await post('/api/public/bootstrap',{sessionToken,countEntry:false});
+    const map=new Map();for(const item of Array.isArray(boot.items)?boot.items:[])if(item?.id)map.set(String(item.id),item);
+    for(const route of ['/api/public/news-page','/api/public/analysis','/api/public/archive','/api/public/english']){
+      for(let offset=0;offset<2400;offset+=24){const page=await post(route,{sessionToken,offset,limit:24});const items=Array.isArray(page.items)?page.items:[];for(const item of items)if(item?.id)map.set(String(item.id),item);if(!page.hasMore||items.length<24)break;}
+    }
+    const client=await pool.connect();try{await client.query('begin');if(boot.settings)await client.query('insert into sayeh_settings(id,data) values(1,$1::jsonb) on conflict(id) do update set data=excluded.data',[JSON.stringify({...defaults,...boot.settings})]);let n=0;for(const [id,item] of map){const data={...item};delete data.id;await client.query('insert into sayeh_articles(id,data) values($1,$2::jsonb) on conflict(id) do update set data=excluded.data',[id,JSON.stringify(data)]);n++;}const summary={articles:n,settings:Boolean(boot.settings),mode:'public-pull'};await client.query('insert into sayeh_migrations(source,imported_at,summary) values($1,$2,$3::jsonb)',['appdeploy-public',Date.now(),JSON.stringify(summary)]);await client.query('commit');return send(res,{ok:true,...summary});}catch(e){await client.query('rollback');throw e}finally{client.release()}
+  }
   if(p==='/api/visitor-auth/status'&&req.method==='GET')return send(res,{configured:false});
   if(p==='/api/visitor-auth/anonymous'&&req.method==='POST'){const b=await readBody(req),id=String(b.visitorId||crypto.randomUUID()),v=visitor(id),t=rand(),exp=Date.now()+2592000000;await pool.query('insert into sayeh_sessions(token,visitor,expires_at) values($1,$2::jsonb,$3)',[t,JSON.stringify(v),exp]);return send(res,{ok:true,sessionToken:t,visitor:v,expiresAt:exp})}
   if(p==='/api/visitor-auth/session'&&req.method==='POST'){const b=await readBody(req),v=await validSession(b.sessionToken);return v?send(res,{ok:true,visitor:v}):send(res,{ok:false},401)}
