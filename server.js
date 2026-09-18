@@ -3,40 +3,48 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {fileURLToPath} from 'node:url';
+import pg from 'pg';
+const Pool=pg.Pool;
 const root=path.dirname(fileURLToPath(import.meta.url));
+const pool=new Pool({connectionString:process.env.DATABASE_URL,ssl:{rejectUnauthorized:false}});
 const PORT=process.env.PORT||10000;
 const defaults={siteTitle:'خبرگزاری سایه',brandName:'SAYEH NEWS',tagline:'پنهان از نگاه‌ها، مسلط بر رویدادها',newsroomLabel:'تحریریه',homeTitle:'پنهان از نگاه‌ها',newsTitle:'آخرین خبرها',analysisTitle:'تحلیل رویدادها',archiveTitle:'آرشیف خبرها',englishTitle:'English News',englishDeskLabel:'English Desk',navHome:'خانه',navNews:'خبرها',navAnalysis:'تحلیل',navArchive:'آرشیف',navEnglish:'English',breakingLabel:'خبر فوری',footerText:'تمام حقوق این خبرگزاری برای سایه محفوظ می‌باشد.',footerYear:'۲۰۲۳',searchPlaceholder:'جست‌وجوی خبر و تحلیل...',defaultLanguage:'دری',breakingBar:true,watermark:true,versioning:true,autoShare:true,viewCountThreshold:500,archiveDays:20,visualRequired:true,sourceMonitorEnabled:true,forceArianaSource:true,primaryIntervalMinutes:5,primaryItemsPerCycle:3,secondarySourcesPerCycle:1,secondaryHighItemsPerCycle:3,secondaryNormalItemsPerCycle:2,autoWordLimit:1000,openverseFallback:true,bbcReplaceSourceImage:true,logoUrl:'/resources/sayeh-news-logo.png'};
-function send(res,obj,status){res.writeHead(status||200,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});res.end(JSON.stringify(obj))}
-function readBody(req){return new Promise((ok,fail)=>{let d='';req.on('data',c=>{d+=c;if(d.length>5000000)req.destroy()});req.on('end',()=>{try{ok(d?JSON.parse(d):{})}catch(e){fail(e)}});req.on('error',fail)})}
-function rand(){return crypto.randomBytes(32).toString('base64url')}
-function visitor(id){return {userId:id,email:'',name:'مهمان'}}
-const sessions=new Map();let store={settings:defaults,articles:[]};
-function init(){try{const f=path.join(root,'data.json');if(fs.existsSync(f)){const d=JSON.parse(fs.readFileSync(f,'utf8'));store={settings:Object.assign({},defaults,d.settings||{}),articles:Array.isArray(d.articles)?d.articles:[]}}}catch(e){console.error('data load',e)}}
-async function settings(){return store.settings||defaults}
-async function allArticles(){return [...(store.articles||[])].sort((a,b)=>Number(b.publishedAt||b.createdAt||b.updatedAt||0)-Number(a.publishedAt||a.createdAt||a.updatedAt||0)).slice(0,500)}
-async function validSession(t){if(!t)return null;const x=sessions.get(t);if(!x||x.expiresAt<Date.now()){sessions.delete(t);return null}return x.visitor}
+const send=(res,obj,status=200)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});res.end(JSON.stringify(obj))};
+const readBody=req=>new Promise((ok,fail)=>{let d='';req.on('data',c=>{d+=c;if(d.length>5000000)req.destroy()});req.on('end',()=>{try{ok(d?JSON.parse(d):{})}catch(e){fail(e)}});req.on('error',fail)});
+const rand=()=>crypto.randomBytes(32).toString('base64url');
+const visitor=id=>({userId:id,email:'',name:'مهمان'});
+async function init(){
+  await pool.query('create table if not exists sayeh_settings(id int primary key,data jsonb not null)');
+  await pool.query('create table if not exists sayeh_articles(id text primary key,data jsonb not null)');
+  await pool.query('create table if not exists sayeh_sessions(token text primary key,visitor jsonb not null,expires_at bigint not null)');
+  await pool.query('create table if not exists sayeh_events(id bigserial primary key,visitor_id text,event text,article_id text,created_at bigint not null)');
+  await pool.query('insert into sayeh_settings(id,data) values(1,$1::jsonb) on conflict(id) do nothing',[JSON.stringify(defaults)]);
+}
+async function settings(){const r=await pool.query('select data from sayeh_settings where id=1');return r.rows[0]?.data||defaults}
+async function allArticles(){const r=await pool.query("select id,data from sayeh_articles order by coalesce((data->>'publishedAt')::bigint,(data->>'createdAt')::bigint,(data->>'updatedAt')::bigint,0) desc limit 500");return r.rows.map(x=>({...x.data,id:x.id}))}
+async function validSession(t){if(!t)return null;const r=await pool.query('select visitor,expires_at from sayeh_sessions where token=$1',[t]);const x=r.rows[0];return x&&Number(x.expires_at)>Date.now()?x.visitor:null}
 async function pub(kind){let a=(await allArticles()).filter(x=>x.status==='published'||!x.status);if(kind==='analysis')a=a.filter(x=>x.section==='analysis'||x.category==='تحلیل');if(kind==='english')a=a.filter(x=>x.language==='English'||x.section==='english');if(kind==='archive')a=a.filter(x=>x.archived);return a}
-async function event(){return true}
+async function logEvent(v,e,a){await pool.query('insert into sayeh_events(visitor_id,event,article_id,created_at) values($1,$2,$3,$4)',[v?.userId||'',e,a||'',Date.now()]).catch(()=>{})}
 function mime(f){if(f.endsWith('.js'))return'application/javascript; charset=utf-8';if(f.endsWith('.css'))return'text/css; charset=utf-8';if(f.endsWith('.png'))return'image/png';if(f.endsWith('.webmanifest'))return'application/manifest+json';return'text/html; charset=utf-8'}
-function staticFile(res,rel){const f=path.join(root,rel);if(!f.startsWith(root)||!fs.existsSync(f)||fs.statSync(f).isDirectory())return false;res.writeHead(200,{'content-type':mime(f),'cache-control':rel.indexOf('assets/')>=0?'public, max-age=31536000, immutable':'public, max-age=300'});fs.createReadStream(f).pipe(res);return true}
+function staticFile(res,rel){const f=path.join(root,rel);if(!f.startsWith(root)||!fs.existsSync(f)||fs.statSync(f).isDirectory())return false;res.writeHead(200,{'content-type':mime(f),'cache-control':rel.includes('assets/')?'public, max-age=31536000, immutable':'public, max-age=300'});fs.createReadStream(f).pipe(res);return true}
 const app=http.createServer(async(req,res)=>{try{const u=new URL(req.url,'http://x'),p=u.pathname;
-if(p==='/health')return send(res,{ok:true,service:'sayeh-independent'});
-if(p==='/api/visitor-auth/status'&&req.method==='GET')return send(res,{configured:false});
-if(p==='/api/visitor-auth/anonymous'&&req.method==='POST'){const b=await readBody(req),id=String(b.visitorId||crypto.randomUUID()),v=visitor(id),t=rand(),exp=Date.now()+2592000000;sessions.set(t,{visitor:v,expiresAt:exp});return send(res,{ok:true,sessionToken:t,visitor:v,expiresAt:exp})}
-if(p==='/api/visitor-auth/session'&&req.method==='POST'){const b=await readBody(req),v=await validSession(b.sessionToken);return v?send(res,{ok:true,visitor:v}):send(res,{ok:false},401)}
-if(p==='/api/visitor-auth/signout'&&req.method==='POST'){const b=await readBody(req);if(b.sessionToken)sessions.delete(b.sessionToken);return send(res,{ok:true})}
-if(p==='/api/public/bootstrap'&&req.method==='POST'){const b=await readBody(req),v=await validSession(b.sessionToken);if(!v)return send(res,{error:'نشست ورود معتبر نیست.'},401);const s=await settings(),items=await pub();if(b.countEntry)await event(v,'site_open');return send(res,{visitor:v,items:items,settings:Object.assign({},s,{logoUrl:'/resources/sayeh-news-logo.png'}),entryRecorded:true})}
-if(p==='/api/public/news'&&req.method==='POST'){const b=await readBody(req),v=await validSession(b.sessionToken);return v?send(res,{items:await pub()}):send(res,{error:'نشست ورود معتبر نیست.'},401)}
-if(p==='/api/public/search'&&req.method==='POST'){const b=await readBody(req),v=await validSession(b.sessionToken);if(!v)return send(res,{error:'نشست ورود معتبر نیست.'},401);const q=String(b.q||'').toLowerCase(),items=(await pub()).filter(x=>(String(x.title||'')+' '+String(x.summary||'')+' '+String(x.body||'')).toLowerCase().includes(q)).slice(0,Number(b.limit||60));return send(res,{items:items})}
-if((p==='/api/public/news-page'||p==='/api/public/analysis'||p==='/api/public/english'||p==='/api/public/archive')&&req.method==='POST'){const b=await readBody(req),v=await validSession(b.sessionToken);if(!v)return send(res,{error:'نشست ورود معتبر نیست.'},401);const kind=p.endsWith('analysis')?'analysis':p.endsWith('english')?'english':p.endsWith('archive')?'archive':undefined,arr=await pub(kind),o=Number(b.offset||0),l=Number(b.limit||24);return send(res,{items:arr.slice(o,o+l),offset:o,limit:l,hasMore:o+l<arr.length})}
-if(p==='/api/public/settings'&&req.method==='POST'){const b=await readBody(req),v=await validSession(b.sessionToken);return v?send(res,await settings()):send(res,{error:'نشست ورود معتبر نیست.'},401)}
-const m=p.match(/^\/api\/public\/news\/([^/]+)(\/view)?$/);if(m&&req.method==='POST'){const b=await readBody(req),v=await validSession(b.sessionToken);if(!v)return send(res,{error:'نشست ورود معتبر نیست.'},401);const id=decodeURIComponent(m[1]),a=(store.articles||[]).find(x=>String(x.id)===id);if(!a)return send(res,{error:'مطلب یافت نشد.'},404);if(m[2]){a.viewCount=Number(a.viewCount||0)+1;await event(v,'article_view',id)}return send(res,a)}
-if((p==='/api/public/visitor/click'||p==='/api/public/visitor/enter'||p==='/api/public/visitor/event')&&req.method==='POST'){const b=await readBody(req),v=(await validSession(b.sessionToken))||visitor(String(b.visitorId||''));await event(v,String(b.event||p.split('/').pop()));return send(res,{ok:true})}
-if(p==='/api/public/news-subscription'&&req.method==='POST')return send(res,{ok:true});
-if(p==='/rss.xml'||p==='/facebook-rss.xml'){const arr=await pub(),esc=s=>String(s||'').replace(/[<>&'"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;',"'":'&apos;','"':'&quot;'}[c])),host='https://'+req.headers.host;let items='';for(const a of arr.slice(0,50))items+='<item><title>'+esc(a.title)+'</title><link>'+host+'/#article='+encodeURIComponent(a.id)+'</link><guid>'+esc(a.id)+'</guid><description>'+esc(a.summary)+'</description></item>';const xml='<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>SAYEH NEWS</title><link>'+host+'</link>'+items+'</channel></rss>';res.writeHead(200,{'content-type':'application/rss+xml; charset=utf-8'});return res.end(xml)}
-if(p.startsWith('/api/'))return send(res,{error:'migration_stage_endpoint_not_available'},503);
-if(p==='/'||p==='/index.html')return staticFile(res,'index.html');
-if(staticFile(res,p.slice(1)))return;
-return staticFile(res,'index.html');
+  if(p==='/health')return send(res,{ok:true,service:'sayeh-independent',database:'neon'});
+  if(p==='/api/visitor-auth/status'&&req.method==='GET')return send(res,{configured:false});
+  if(p==='/api/visitor-auth/anonymous'&&req.method==='POST'){const b=await readBody(req),id=String(b.visitorId||crypto.randomUUID()),v=visitor(id),t=rand(),exp=Date.now()+2592000000;await pool.query('insert into sayeh_sessions(token,visitor,expires_at) values($1,$2::jsonb,$3)',[t,JSON.stringify(v),exp]);return send(res,{ok:true,sessionToken:t,visitor:v,expiresAt:exp})}
+  if(p==='/api/visitor-auth/session'&&req.method==='POST'){const b=await readBody(req),v=await validSession(b.sessionToken);return v?send(res,{ok:true,visitor:v}):send(res,{ok:false},401)}
+  if(p==='/api/visitor-auth/signout'&&req.method==='POST'){const b=await readBody(req);if(b.sessionToken)await pool.query('delete from sayeh_sessions where token=$1',[b.sessionToken]);return send(res,{ok:true})}
+  if(p==='/api/public/bootstrap'&&req.method==='POST'){const b=await readBody(req),v=await validSession(b.sessionToken);if(!v)return send(res,{error:'نشست ورود معتبر نیست.'},401);const s=await settings(),items=await pub();if(b.countEntry)await logEvent(v,'site_open');return send(res,{visitor:v,items,settings:{...s,logoUrl:'/resources/sayeh-news-logo.png'},entryRecorded:true})}
+  if(p==='/api/public/news'&&req.method==='POST'){const b=await readBody(req),v=await validSession(b.sessionToken);return v?send(res,{items:await pub()}):send(res,{error:'نشست ورود معتبر نیست.'},401)}
+  if(p==='/api/public/search'&&req.method==='POST'){const b=await readBody(req),v=await validSession(b.sessionToken);if(!v)return send(res,{error:'نشست ورود معتبر نیست.'},401);const q=String(b.q||'').toLowerCase(),items=(await pub()).filter(x=>[x.title,x.summary,x.body].join(' ').toLowerCase().includes(q)).slice(0,Number(b.limit||60));return send(res,{items})}
+  if(['/api/public/news-page','/api/public/analysis','/api/public/english','/api/public/archive'].includes(p)&&req.method==='POST'){const b=await readBody(req),v=await validSession(b.sessionToken);if(!v)return send(res,{error:'نشست ورود معتبر نیست.'},401);const kind=p.endsWith('analysis')?'analysis':p.endsWith('english')?'english':p.endsWith('archive')?'archive':undefined,arr=await pub(kind),o=Number(b.offset||0),l=Number(b.limit||24);return send(res,{items:arr.slice(o,o+l),offset:o,limit:l,hasMore:o+l<arr.length})}
+  if(p==='/api/public/settings'&&req.method==='POST'){const b=await readBody(req),v=await validSession(b.sessionToken);return v?send(res,await settings()):send(res,{error:'نشست ورود معتبر نیست.'},401)}
+  const m=p.match(/^\/api\/public\/news\/([^/]+)(\/view)?$/);if(m&&req.method==='POST'){const b=await readBody(req),v=await validSession(b.sessionToken);if(!v)return send(res,{error:'نشست ورود معتبر نیست.'},401);const id=decodeURIComponent(m[1]),r=await pool.query('select data from sayeh_articles where id=$1',[id]);if(!r.rows[0])return send(res,{error:'مطلب یافت نشد.'},404);const a={...r.rows[0].data,id};if(m[2]){a.viewCount=Number(a.viewCount||0)+1;await pool.query('update sayeh_articles set data=$2::jsonb where id=$1',[id,JSON.stringify(a)]);await logEvent(v,'article_view',id)}return send(res,a)}
+  if(['/api/public/visitor/click','/api/public/visitor/enter','/api/public/visitor/event'].includes(p)&&req.method==='POST'){const b=await readBody(req),v=(await validSession(b.sessionToken))||visitor(String(b.visitorId||''));await logEvent(v,String(b.event||p.split('/').pop()));return send(res,{ok:true})}
+  if(p==='/api/public/news-subscription'&&req.method==='POST')return send(res,{ok:true});
+  if(p==='/rss.xml'||p==='/facebook-rss.xml'){const arr=await pub(),esc=s=>String(s||'').replace(/[<>&'"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;',"'":'&apos;','"':'&quot;'}[c])),host='https://'+req.headers.host;const items=arr.slice(0,50).map(a=>'<item><title>'+esc(a.title)+'</title><link>'+host+'/#article='+encodeURIComponent(a.id)+'</link><guid>'+esc(a.id)+'</guid><description>'+esc(a.summary)+'</description></item>').join('');res.writeHead(200,{'content-type':'application/rss+xml; charset=utf-8'});return res.end('<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>SAYEH NEWS</title><link>'+host+'</link>'+items+'</channel></rss>')}
+  if(p.startsWith('/api/'))return send(res,{error:'migration_stage_endpoint_not_available'},503);
+  if(p==='/'||p==='/index.html')return staticFile(res,'index.html');
+  if(staticFile(res,p.slice(1)))return;
+  return staticFile(res,'index.html');
 }catch(e){console.error(e);return send(res,{error:'server_error'},500)}});
-init();app.listen(PORT,'0.0.0.0',()=>console.log('SAYEH independent staging listening '+PORT));
+init().then(()=>app.listen(PORT,'0.0.0.0',()=>console.log('SAYEH independent listening '+PORT))).catch(e=>{console.error(e);process.exit(1)});
