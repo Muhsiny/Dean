@@ -1,11 +1,11 @@
-/* Beheshti University v4.29.3 — approved homepage refinements */
+/* Beheshti University v4.29.5 — approved homepage refinements */
 .library-grid{padding:8px;border:1px solid rgba(255,255,255,.70);border-radius:20px;background:rgba(255,255,255,.48);box-shadow:var(--bu-shadow-soft);backdrop-filter:blur(20px) saturate(128%);-webkit-backdrop-filter:blur(20px) saturate(128%);overflow:hidden}
 .course-card .course-link,.program-academic-list button.text-link,.catalog-filters button,.library-grid>article a,main input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]){min-height:44px}
 .course-card .course-link,.program-academic-list button.text-link,.library-grid>article a{display:inline-flex;align-items:center}.course-card .course-link{justify-content:space-between}
 
 .hero-v4293-ready{display:grid!important;grid-template-columns:minmax(0,1.12fr) minmax(420px,.88fr)!important;gap:clamp(28px,4.5vw,64px)!important;align-items:center!important;direction:ltr!important;padding:clamp(42px,5vw,68px)!important}
 .hero-v4293-ready .heritage-copy{grid-column:2!important;direction:rtl!important;align-self:center;max-width:100%}
-.hero-v4293-ready .heritage-bismillah{display:block;width:clamp(150px,15vw,205px);height:clamp(84px,8vw,112px);margin:0 0 6px auto;color:transparent!important;font-size:0!important;line-height:0;background-image:url('/edge-assets/bismillah.webp');background-repeat:no-repeat;background-size:135% auto;background-position:center center;opacity:.96}
+.hero-v4293-ready .heritage-bismillah{display:block;width:clamp(150px,15vw,205px);height:clamp(84px,8vw,112px);margin:0 0 6px auto;color:transparent!important;font-size:0!important;line-height:0;background-image:url('/edge-assets/bismillah.png');background-repeat:no-repeat;background-size:135% auto;background-position:center center;opacity:.96}
 .hero-v4293-ready .hero-office-visual{grid-column:1!important;position:relative;min-height:clamp(410px,37vw,520px);overflow:hidden;border:1px solid rgba(255,255,255,.76);border-radius:28px;background:linear-gradient(150deg,rgba(236,244,241,.92),rgba(248,246,239,.72));box-shadow:0 26px 70px rgba(23,61,53,.15),inset 0 1px 0 rgba(255,255,255,.82);isolation:isolate;direction:rtl}
 .hero-office-photo{position:absolute;inset:0;background-image:linear-gradient(90deg,rgba(238,246,243,.18),rgba(248,246,239,.05)),url('/edge-assets/hero-office.jpg');background-size:cover;background-position:center;filter:saturate(.86) contrast(.96) brightness(1.03);transform:scale(1.015)}
 .hero-office-visual:after{content:"";position:absolute;inset:0;z-index:1;background:linear-gradient(180deg,rgba(255,255,255,.02) 34%,rgba(10,38,31,.18) 100%);pointer-events:none}
