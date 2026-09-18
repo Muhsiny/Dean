@@ -18,6 +18,8 @@ async function init(){
   await pool.query('create table if not exists sayeh_articles(id text primary key,data jsonb not null)');
   await pool.query('create table if not exists sayeh_sessions(token text primary key,visitor jsonb not null,expires_at bigint not null)');
   await pool.query('create table if not exists sayeh_events(id bigserial primary key,visitor_id text,event text,article_id text,created_at bigint not null)');
+  await pool.query('create table if not exists sayeh_records(entity text not null,id text not null,data jsonb not null,primary key(entity,id))');
+  await pool.query('create table if not exists sayeh_migrations(id bigserial primary key,source text not null,imported_at bigint not null,summary jsonb not null)');
   await pool.query('insert into sayeh_settings(id,data) values(1,$1::jsonb) on conflict(id) do nothing',[JSON.stringify(defaults)]);
 }
 async function settings(){const r=await pool.query('select data from sayeh_settings where id=1');return r.rows[0]?.data||defaults}
@@ -29,6 +31,20 @@ function mime(f){if(f.endsWith('.js'))return'application/javascript; charset=utf
 function staticFile(res,rel){const f=path.join(root,rel);if(!f.startsWith(root)||!fs.existsSync(f)||fs.statSync(f).isDirectory())return false;res.writeHead(200,{'content-type':mime(f),'cache-control':rel.includes('assets/')?'public, max-age=31536000, immutable':'public, max-age=300'});fs.createReadStream(f).pipe(res);return true}
 const app=http.createServer(async(req,res)=>{try{const u=new URL(req.url,'http://x'),p=u.pathname;
   if(p==='/health')return send(res,{ok:true,service:'sayeh-independent',database:'neon'});
+  if(p==='/migration/status'&&req.method==='GET'){
+    const [a,e,m]=await Promise.all([pool.query('select count(*)::int as n from sayeh_articles'),pool.query('select count(*)::int as n from sayeh_events'),pool.query('select source,imported_at,summary from sayeh_migrations order by id desc limit 1')]);
+    return send(res,{ready:true,articles:a.rows[0].n,events:e.rows[0].n,lastMigration:m.rows[0]||null});
+  }
+  if(p==='/migration/import'&&req.method==='POST'){
+    if(!process.env.MIGRATION_TOKEN||req.headers['x-migration-token']!==process.env.MIGRATION_TOKEN)return send(res,{error:'forbidden'},403);
+    const b=await readBody(req),articles=Array.isArray(b.articles)?b.articles:[],entities=b.entities&&typeof b.entities==='object'?b.entities:{},incomingSettings=b.settings&&typeof b.settings==='object'?b.settings:null;
+    const client=await pool.connect();try{await client.query('begin');
+      if(incomingSettings)await client.query('insert into sayeh_settings(id,data) values(1,$1::jsonb) on conflict(id) do update set data=excluded.data',[JSON.stringify({...defaults,...incomingSettings})]);
+      let articleCount=0;for(const item of articles){if(!item||typeof item!=='object')continue;const id=String(item.id||item._id||crypto.randomUUID());const data={...item};delete data.id;delete data._id;await client.query('insert into sayeh_articles(id,data) values($1,$2::jsonb) on conflict(id) do update set data=excluded.data',[id,JSON.stringify(data)]);articleCount++;}
+      let entityCount=0;for(const [entity,rows] of Object.entries(entities)){if(!Array.isArray(rows))continue;for(const item of rows){if(!item||typeof item!=='object')continue;const id=String(item.id||item._id||crypto.randomUUID());const data={...item};delete data.id;delete data._id;await client.query('insert into sayeh_records(entity,id,data) values($1,$2,$3::jsonb) on conflict(entity,id) do update set data=excluded.data',[entity,id,JSON.stringify(data)]);entityCount++;}}
+      const summary={articles:articleCount,entities:entityCount,settings:Boolean(incomingSettings)};await client.query('insert into sayeh_migrations(source,imported_at,summary) values($1,$2,$3::jsonb)',[String(b.source||'appdeploy'),Date.now(),JSON.stringify(summary)]);await client.query('commit');return send(res,{ok:true,...summary});
+    }catch(e){await client.query('rollback');throw e}finally{client.release()}
+  }
   if(p==='/api/visitor-auth/status'&&req.method==='GET')return send(res,{configured:false});
   if(p==='/api/visitor-auth/anonymous'&&req.method==='POST'){const b=await readBody(req),id=String(b.visitorId||crypto.randomUUID()),v=visitor(id),t=rand(),exp=Date.now()+2592000000;await pool.query('insert into sayeh_sessions(token,visitor,expires_at) values($1,$2::jsonb,$3)',[t,JSON.stringify(v),exp]);return send(res,{ok:true,sessionToken:t,visitor:v,expiresAt:exp})}
   if(p==='/api/visitor-auth/session'&&req.method==='POST'){const b=await readBody(req),v=await validSession(b.sessionToken);return v?send(res,{ok:true,visitor:v}):send(res,{ok:false},401)}
