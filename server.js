@@ -151,6 +151,8 @@ const server=http.createServer(async(req,res)=>{
     }
     const upstream=await fetch(target,{method,headers,body,redirect:'manual',signal:AbortSignal.timeout(30000)});
     copyHeaders(upstream,res,path);
+    const requestedHost=String(req.headers.host||'').split(':')[0].toLowerCase();
+    if(requestedHost&&requestedHost!==PUBLIC_HOST.toLowerCase())res.setHeader('x-robots-tag','noindex, nofollow, noarchive');
     res.statusCode=upstream.status;
     if(method==='HEAD'){return res.end()}
     let buf=Buffer.from(await upstream.arrayBuffer());
