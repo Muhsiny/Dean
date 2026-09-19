@@ -18,14 +18,38 @@ function blocked(key,limit,windowMs){
   old.n++; if(buckets.size>5000)for(const[k,v]of buckets)if(v.until<=now)buckets.delete(k);
   return old.n>limit;
 }
+function decodeSession(token){
+  try{
+    const p=String(token||'').split('.')[1];if(!p)return null;
+    return JSON.parse(Buffer.from(p,'base64url').toString('utf8'));
+  }catch{return null}
+}
+function maxSessionAgeSeconds(payload){
+  return ['admin','super_admin','reviewer','instructor'].includes(String(payload?.role||''))?8*3600:24*3600;
+}
 function secureCookie(v){
   let c=String(v||'');
   if(!/^beheshti_session=/i.test(c))return c;
+  const token=(c.match(/^beheshti_session=([^;]+)/i)||[])[1]||'';
+  const maxAge=maxSessionAgeSeconds(decodeSession(token));
   c=/;\s*SameSite=/i.test(c)?c.replace(/;\s*SameSite=[^;]*/i,'; SameSite=Strict'):`${c}; SameSite=Strict`;
+  c=/;\s*Max-Age=/i.test(c)?c.replace(/;\s*Max-Age=[^;]*/i,`; Max-Age=${maxAge}`):`${c}; Max-Age=${maxAge}`;
+  c=c.replace(/;\s*Expires=[^;]*/ig,'');
   if(!/;\s*Secure\b/i.test(c))c+='; Secure';
   if(!/;\s*HttpOnly\b/i.test(c))c+='; HttpOnly';
   if(!/;\s*Priority=/i.test(c))c+='; Priority=High';
   return c;
+}
+function boundedSessionCookie(raw){
+  if(!raw)return raw;
+  const parts=String(raw).split(';').map(x=>x.trim()).filter(Boolean);
+  const kept=[];
+  for(const part of parts){
+    if(!/^beheshti_session=/i.test(part)){kept.push(part);continue}
+    const token=part.slice(part.indexOf('=')+1),p=decodeSession(token);
+    if(!p?.iat||Math.floor(Date.now()/1000)-Number(p.iat)<=maxSessionAgeSeconds(p))kept.push(part);
+  }
+  return kept.join('; ');
 }
 function hardenCsp(value){
   const map=new Map();
@@ -40,7 +64,7 @@ function hardenCsp(value){
     'connect-src':"connect-src 'self'",'script-src-attr':"script-src-attr 'none'"
   };
   for(const[k,v]of Object.entries(force))map.set(k,v);
-  if(!map.has('img-src'))map.set('img-src',"img-src 'self' data:");
+  map.set('img-src',"img-src 'self' data:");
   if(!map.has('font-src'))map.set('font-src',"font-src 'self' data:");
   if(!map.has('script-src'))map.set('script-src',"script-src 'self'");
   map.set('upgrade-insecure-requests','upgrade-insecure-requests');
@@ -98,6 +122,8 @@ const server=http.createServer(async(req,res)=>{
       headers.set(k,Array.isArray(v)?v.join(', '):v);
     }
     headers.set('host',new URL(UPSTREAM).host);
+    const boundedCookie=boundedSessionCookie(req.headers.cookie);
+    if(boundedCookie)headers.set('cookie',boundedCookie);else headers.delete('cookie');
     headers.set('x-forwarded-host',PUBLIC_HOST);
     headers.set('x-forwarded-proto','https');
     let body;
@@ -117,6 +143,8 @@ const server=http.createServer(async(req,res)=>{
       res.setHeader('content-type','text/css; charset=utf-8');
       res.setHeader('cache-control','public,max-age=3600,stale-while-revalidate=86400');
     }else if(ct.includes('text/html')){
+      const publicOrigin='https://'+PUBLIC_HOST;
+      buf=Buffer.from(buf.toString('utf8').split(UPSTREAM).join(publicOrigin));
       res.setHeader('content-type','text/html; charset=utf-8');
     }
     res.setHeader('content-length',String(buf.length));
