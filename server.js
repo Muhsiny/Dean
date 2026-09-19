@@ -122,6 +122,11 @@ const server=http.createServer(async(req,res)=>{
       headers.set(k,Array.isArray(v)?v.join(', '):v);
     }
     headers.set('host',new URL(UPSTREAM).host);
+    if(['POST','PUT','PATCH','DELETE'].includes(method)){
+      headers.set('origin',new URL(UPSTREAM).origin);
+      if(headers.has('referer'))headers.set('referer',new URL(req.url||'/',UPSTREAM).href);
+      headers.set('sec-fetch-site','same-origin');
+    }
     const boundedCookie=boundedSessionCookie(req.headers.cookie);
     if(boundedCookie)headers.set('cookie',boundedCookie);else headers.delete('cookie');
     headers.set('x-forwarded-host',PUBLIC_HOST);
