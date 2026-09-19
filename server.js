@@ -166,6 +166,9 @@ const server=http.createServer(async(req,res)=>{
         .replaceAll('کورسها','کورس‌ها');
       buf=Buffer.from(manifest);
       res.setHeader('content-type','application/manifest+json; charset=utf-8');
+    }else if(path==='/robots.txt'||path==='/sitemap.xml'||path==='/.well-known/security.txt'){
+      const publicOrigin='https://'+PUBLIC_HOST;
+      buf=Buffer.from(buf.toString('utf8').split(UPSTREAM).join(publicOrigin));
     }else if(ct.includes('text/html')){
       const publicOrigin='https://'+PUBLIC_HOST;
       let html=buf.toString('utf8').split(UPSTREAM).join(publicOrigin);
