@@ -1,8 +1,13 @@
 {
   "name": "beheshti-hotfix-proxy",
-  "version": "4.29.3",
+  "version": "4.32.0",
   "private": true,
   "type": "module",
-  "scripts": {"start": "node server.js"},
-  "engines": {"node": ">=20"}
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "description": "Beheshti International University secure full-site gateway"
 }
