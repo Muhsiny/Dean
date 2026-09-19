@@ -159,6 +159,13 @@ const server=http.createServer(async(req,res)=>{
       buf=Buffer.concat([buf,Buffer.from('\n/* BIU_GATEWAY_4320 */\n'+SITE_CSS+'\n')]);
       res.setHeader('content-type','text/css; charset=utf-8');
       res.setHeader('cache-control','public,max-age=3600,stale-while-revalidate=86400');
+    }else if(path==='/manifest.webmanifest'){
+      let manifest=buf.toString('utf8')
+        .replaceAll('دانشگاه بینالمللی بهشتی','دانشگاه بین‌المللی بهشتی')
+        .replaceAll('راستیآزمایی','راستی‌آزمایی')
+        .replaceAll('کورسها','کورس‌ها');
+      buf=Buffer.from(manifest);
+      res.setHeader('content-type','application/manifest+json; charset=utf-8');
     }else if(ct.includes('text/html')){
       const publicOrigin='https://'+PUBLIC_HOST;
       let html=buf.toString('utf8').split(UPSTREAM).join(publicOrigin);
