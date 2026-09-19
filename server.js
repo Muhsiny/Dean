@@ -70,6 +70,18 @@ function hardenCsp(value){
   map.set('upgrade-insecure-requests','upgrade-insecure-requests');
   return [...map.values()].join('; ');
 }
+function ssrTitleFor(path){
+  const titles={
+    '/account':'Account | Beheshti International University',
+    '/verify':'Credential Verification | Beheshti International University',
+    '/transcript':'Academic Transcript | Beheshti International University',
+    '/student-record':'Student Record | Beheshti International University',
+    '/admin':'University Administration | Beheshti International University',
+    '/studio':'Academic Studio | Beheshti International University',
+    '/university-ops':'University Operations | Beheshti International University'
+  };
+  return titles[path]||'';
+}
 function copyHeaders(from,res,path){
   for(const[k,v]of from.headers){
     const key=k.toLowerCase();
@@ -149,7 +161,10 @@ const server=http.createServer(async(req,res)=>{
       res.setHeader('cache-control','public,max-age=3600,stale-while-revalidate=86400');
     }else if(ct.includes('text/html')){
       const publicOrigin='https://'+PUBLIC_HOST;
-      buf=Buffer.from(buf.toString('utf8').split(UPSTREAM).join(publicOrigin));
+      let html=buf.toString('utf8').split(UPSTREAM).join(publicOrigin);
+      const ssrTitle=ssrTitleFor(path);
+      if(ssrTitle)html=html.replace(/<title>[^<]*<\/title>/i,'<title>'+ssrTitle+'</title>');
+      buf=Buffer.from(html);
       res.setHeader('content-type','text/html; charset=utf-8');
     }
     res.setHeader('content-length',String(buf.length));
