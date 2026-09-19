@@ -123,7 +123,7 @@ const server=http.createServer(async(req,res)=>{
     res.end(buf);
   }catch(error){
     res.statusCode=502;res.setHeader('content-type','application/json; charset=utf-8');
-    res.end(JSON.stringify({error:'upstream_proxy_error',requestId:crypto?.randomUUID?.()}));
+    res.end(JSON.stringify({error:'upstream_proxy_error'}));
   }
 });
 server.listen(PORT,'0.0.0.0',()=>console.log('BIU secure gateway',VERSION,'listening',PORT));
