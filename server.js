@@ -1,112 +1,129 @@
 import http from 'node:http';
-import { readFileSync } from 'node:fs';
+import {readFileSync} from 'node:fs';
 
-const PORT = Number(process.env.PORT || 10000);
-const UPSTREAM = process.env.UPSTREAM_ORIGIN || 'https://beheshti-university-prod-v410.onrender.com';
-const HOTFIX = readFileSync(new URL('./edge-assets/home-4293.css', import.meta.url),'utf8');
-const HERO_JS = readFileSync(new URL('./edge-assets/home-hero-4293.js', import.meta.url),'utf8');
-const CERT_JS = readFileSync(new URL('./edge-assets/home-certificate-4293.js', import.meta.url),'utf8');
-const BISMILLAH_URL = 'https://dl.shut.ir/public/file/2023/3/23/%D8%B9%DA%A9%D8%B3-%D8%A8%D8%B3%D9%85-%D8%A7%D9%84%D9%84%D9%87-%D8%A7%D9%84%D8%B1%D8%AD%D9%85%D9%86-%D8%A7%D9%84%D8%B1%D8%AD%DB%8C%D9%85.png';
-const OFFICE_URL = 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1800&q=86';
+const PORT=Number(process.env.PORT||10000);
+const UPSTREAM=process.env.UPSTREAM_ORIGIN||'https://beheshti-university-prod-v410.onrender.com';
+const PUBLIC_HOST=process.env.PUBLIC_HOST||'beheshti-university.un-beha.org';
+const SITE_CSS=readFileSync(new URL('./edge-assets/site-wide-v4320.css',import.meta.url),'utf8');
+const VERSION='4.32.0-secure-gateway';
+const hop=new Set(['connection','keep-alive','proxy-authenticate','proxy-authorization','te','trailers','transfer-encoding','upgrade','content-length','content-encoding']);
+const buckets=new Map();
 
-const hop = new Set(['connection','keep-alive','proxy-authenticate','proxy-authorization','te','trailers','transfer-encoding','upgrade','content-length','content-encoding']);
-const assetCache = new Map();
-
-function publicHost(req){return String(req.headers['x-forwarded-host']||req.headers.host||'').split(',')[0].trim()}
-function publicProto(req){return String(req.headers['x-forwarded-proto']||'https').split(',')[0].trim()}
-
-function copyHeaders(from,res,req){
-  for(const [k,v] of from.headers){
+function clientIp(req){
+  return String(req.headers['cf-connecting-ip']||req.headers['x-forwarded-for']||req.socket.remoteAddress||'unknown').split(',')[0].trim();
+}
+function blocked(key,limit,windowMs){
+  const now=Date.now(),old=buckets.get(key);
+  if(!old||old.until<=now){buckets.set(key,{n:1,until:now+windowMs});return false}
+  old.n++; if(buckets.size>5000)for(const[k,v]of buckets)if(v.until<=now)buckets.delete(k);
+  return old.n>limit;
+}
+function secureCookie(v){
+  let c=String(v||'');
+  if(!/^beheshti_session=/i.test(c))return c;
+  c=/;\s*SameSite=/i.test(c)?c.replace(/;\s*SameSite=[^;]*/i,'; SameSite=Strict'):`${c}; SameSite=Strict`;
+  if(!/;\s*Secure\b/i.test(c))c+='; Secure';
+  if(!/;\s*HttpOnly\b/i.test(c))c+='; HttpOnly';
+  if(!/;\s*Priority=/i.test(c))c+='; Priority=High';
+  return c;
+}
+function hardenCsp(value){
+  const map=new Map();
+  for(const raw of String(value||'').split(';')){
+    const p=raw.trim();if(!p)continue;
+    const [name,...rest]=p.split(/\s+/);map.set(name.toLowerCase(),`${name.toLowerCase()}${rest.length?' '+rest.join(' '):''}`);
+  }
+  const force={
+    'default-src':"default-src 'self'",'base-uri':"base-uri 'self'",'form-action':"form-action 'self'",
+    'frame-src':"frame-src 'none'",'frame-ancestors':"frame-ancestors 'none'",'object-src':"object-src 'none'",
+    'media-src':"media-src 'self'",'manifest-src':"manifest-src 'self'",'worker-src':"worker-src 'self'",
+    'connect-src':"connect-src 'self'",'script-src-attr':"script-src-attr 'none'"
+  };
+  for(const[k,v]of Object.entries(force))map.set(k,v);
+  if(!map.has('img-src'))map.set('img-src',"img-src 'self' data:");
+  if(!map.has('font-src'))map.set('font-src',"font-src 'self' data:");
+  if(!map.has('script-src'))map.set('script-src',"script-src 'self'");
+  map.set('upgrade-insecure-requests','upgrade-insecure-requests');
+  return [...map.values()].join('; ');
+}
+function copyHeaders(from,res,path){
+  for(const[k,v]of from.headers){
     const key=k.toLowerCase();
-    if(hop.has(key)) continue;
-    if(key==='location'){
-      res.setHeader(k,String(v).replace(UPSTREAM,publicProto(req)+'://'+publicHost(req)));
-      continue;
-    }
-    if(key==='set-cookie') continue;
+    if(hop.has(key)||key==='set-cookie'||key==='x-powered-by')continue;
+    if(key==='location'){res.setHeader(k,String(v).replace(UPSTREAM,'https://'+PUBLIC_HOST));continue}
     res.setHeader(k,v);
   }
-  const setCookies=from.headers.getSetCookie?.()||[];
-  if(setCookies.length) res.setHeader('set-cookie',setCookies);
-  res.setHeader('x-beheshti-hotfix','4.29.5');
-}
-
-async function serveAsset(res,key,url,type){
-  try{
-    let buf=assetCache.get(key);
-    if(!buf){
-      const r=await fetch(url,{headers:{'user-agent':'Mozilla/5.0'}});
-      if(!r.ok) throw new Error('asset_fetch');
-      buf=Buffer.from(await r.arrayBuffer());
-      assetCache.set(key,buf);
-    }
-    res.statusCode=200;
-    res.setHeader('content-type',type);
-    res.setHeader('cache-control','public,max-age=604800,immutable');
-    res.setHeader('content-length',String(buf.length));
-    res.end(buf);
-  }catch{
-    res.statusCode=404;
-    res.end();
+  const cookies=from.headers.getSetCookie?.()||[];
+  if(cookies.length)res.setHeader('set-cookie',cookies.map(secureCookie));
+  res.setHeader('x-biu-gateway',VERSION);
+  res.setHeader('strict-transport-security','max-age=63072000; includeSubDomains');
+  res.setHeader('x-content-type-options','nosniff');
+  res.setHeader('x-frame-options','DENY');
+  res.setHeader('referrer-policy','no-referrer');
+  res.setHeader('cross-origin-opener-policy','same-origin');
+  res.setHeader('cross-origin-resource-policy','same-origin');
+  res.setHeader('origin-agent-cluster','?1');
+  res.setHeader('x-permitted-cross-domain-policies','none');
+  res.setHeader('permissions-policy','camera=(), geolocation=(), payment=(), usb=(), microphone=(self), fullscreen=(self)');
+  const csp=res.getHeader('content-security-policy');
+  if(csp)res.setHeader('content-security-policy',hardenCsp(csp));
+  if(/^\/api\/(?:auth|account|admin|studio|internal|admissions|registrar|student|dashboard|me|dr)(?:\/|$)/.test(path))
+    res.setHeader('cache-control','private, no-store');
+  if(/^(?:\/api\/submission-attachments\/[^/]+\/file|\/api\/resources\/[^/]+\/file|\/api\/admissions\/documents\/[^/]+\/file)$/.test(path)){
+    res.setHeader('content-disposition','attachment; filename="secure-download"');
+    res.setHeader('x-download-options','noopen');
+    res.setHeader('content-security-policy',"sandbox; default-src 'none'");
   }
 }
-
 const server=http.createServer(async(req,res)=>{
   try{
+    const method=String(req.method||'GET').toUpperCase();
     const edgeUrl=new URL(req.url||'/','https://edge.invalid');
-    if(edgeUrl.pathname==='/edge-assets/bismillah.png'){
-      await serveAsset(res,'bismillah',BISMILLAH_URL,'image/png');
-      return;
+    const path=edgeUrl.pathname;
+    if(/^(TRACE|TRACK|CONNECT)$/.test(method)){res.writeHead(405,{allow:'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS'});return res.end()}
+    if(String(req.url||'').length>8192){res.statusCode=414;return res.end()}
+    const declared=Number(req.headers['content-length']||0);
+    if(Number.isFinite(declared)&&declared>22*1024*1024){res.statusCode=413;return res.end()}
+    const ip=clientIp(req);
+    if(method==='POST'&&/^\/api\/(?:auth\/(?:login|recover|password-reset\/)|setup\/)/.test(path)&&blocked('auth:'+ip,30,15*60*1000)){
+      res.writeHead(429,{'content-type':'application/json; charset=utf-8','retry-after':'900'});return res.end('{"error":"too_many_requests"}')
     }
-    if(edgeUrl.pathname==='/edge-assets/hero-office.jpg'){
-      await serveAsset(res,'office',OFFICE_URL,'image/jpeg');
-      return;
+    if(method==='POST'&&path==='/api/support/tickets'&&blocked('support:'+ip,6,10*60*1000)){
+      res.writeHead(429,{'content-type':'application/json; charset=utf-8','retry-after':'600'});return res.end('{"error":"too_many_requests"}')
     }
-
     const target=new URL(req.url||'/',UPSTREAM);
     const headers=new Headers();
-    for(const [k,v] of Object.entries(req.headers)){
-      if(!v||hop.has(k.toLowerCase())||k.toLowerCase()==='host') continue;
+    for(const[k,v]of Object.entries(req.headers)){
+      if(!v||hop.has(k.toLowerCase())||k.toLowerCase()==='host')continue;
       headers.set(k,Array.isArray(v)?v.join(', '):v);
     }
     headers.set('host',new URL(UPSTREAM).host);
-    headers.set('x-forwarded-host',publicHost(req));
-    headers.set('x-forwarded-proto',publicProto(req));
-
+    headers.set('x-forwarded-host',PUBLIC_HOST);
+    headers.set('x-forwarded-proto','https');
     let body;
-    if(!['GET','HEAD'].includes(req.method||'GET')){
-      const chunks=[];
-      for await(const c of req) chunks.push(c);
+    if(!['GET','HEAD'].includes(method)){
+      const chunks=[];let size=0;
+      for await(const c of req){size+=c.length;if(size>22*1024*1024){res.statusCode=413;return res.end()}chunks.push(c)}
       body=Buffer.concat(chunks);
     }
-
-    const upstream=await fetch(target,{method:req.method,headers,body,redirect:'manual'});
-    copyHeaders(upstream,res,req);
+    const upstream=await fetch(target,{method,headers,body,redirect:'manual',signal:AbortSignal.timeout(30000)});
+    copyHeaders(upstream,res,path);
     res.statusCode=upstream.status;
-    if(req.method==='HEAD'){res.end();return}
-
+    if(method==='HEAD'){return res.end()}
     let buf=Buffer.from(await upstream.arrayBuffer());
     const ct=(upstream.headers.get('content-type')||'').toLowerCase();
-
-    if(target.pathname.endsWith('/beheshti.css')||target.pathname==='/beheshti.css'){
-      buf=Buffer.concat([buf,Buffer.from('\n'+HOTFIX+'\n')]);
+    if(path==='/beheshti.css'){
+      buf=Buffer.concat([buf,Buffer.from('\n/* BIU_GATEWAY_4320 */\n'+SITE_CSS+'\n')]);
       res.setHeader('content-type','text/css; charset=utf-8');
-    }else if(target.pathname.endsWith('/app.js')||target.pathname==='/app.js'){
-      buf=Buffer.concat([buf,Buffer.from('\n'+HERO_JS+'\n'+CERT_JS+'\n')]);
-      res.setHeader('content-type','text/javascript; charset=utf-8');
+      res.setHeader('cache-control','public,max-age=3600,stale-while-revalidate=86400');
     }else if(ct.includes('text/html')){
-      const html=buf.toString('utf8').replace(/4\.29\.2/g,'4.29.3');
-      buf=Buffer.from(html);
       res.setHeader('content-type','text/html; charset=utf-8');
     }
-
     res.setHeader('content-length',String(buf.length));
     res.end(buf);
-  }catch{
-    res.statusCode=502;
-    res.setHeader('content-type','application/json; charset=utf-8');
-    res.end(JSON.stringify({error:'upstream_proxy_error'}));
+  }catch(error){
+    res.statusCode=502;res.setHeader('content-type','application/json; charset=utf-8');
+    res.end(JSON.stringify({error:'upstream_proxy_error',requestId:crypto?.randomUUID?.()}));
   }
 });
-
-server.listen(PORT,'0.0.0.0',()=>console.log('beheshti hotfix proxy 4.29.3 listening',PORT));
+server.listen(PORT,'0.0.0.0',()=>console.log('BIU secure gateway',VERSION,'listening',PORT));
