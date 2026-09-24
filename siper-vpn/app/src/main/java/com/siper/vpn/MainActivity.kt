@@ -44,6 +44,8 @@ class MainActivity : Activity() {
     private lateinit var connectButton: Button
     private lateinit var importButton: Button
     private lateinit var alwaysOnButton: Button
+    private lateinit var turboButton: Button
+    private var pendingTurboCandidates: List<WarpProvisioner.Provisioned>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -86,7 +88,7 @@ class MainActivity : Activity() {
         root.addView(title)
 
         val subtitle = TextView(this).apply {
-            text = "WireGuard + AmneziaWG • تونل واقعی، نه شبیه‌سازی"
+            text = "Turbo Route Engine • WARP/WireGuard • تست سرعت واقعی"
             textSize = 14f
             setTextColor(muted)
             setPadding(0, dp(6), 0, dp(28))
@@ -161,6 +163,19 @@ class MainActivity : Activity() {
             ).apply { topMargin = dp(12) }
         )
 
+        turboButton = Button(this).apply {
+            text = "Turbo Auto-Tune — پیدا کردن سریع‌ترین مسیر"
+            isAllCaps = false
+            setOnClickListener { onTurboPressed() }
+        }
+        root.addView(
+            turboButton,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(56)
+            ).apply { topMargin = dp(12) }
+        )
+
         alwaysOnButton = Button(this).apply {
             text = "Always-on VPN / Kill Switch"
             isAllCaps = false
@@ -224,8 +239,8 @@ class MainActivity : Activity() {
                     else -> {
                         stateText.text = if (store.load() == null) "کانفیگ لازم است" else "آماده"
                         detailText.text =
-                            if (store.load() == null) "برای اتصال، دکمه را بزن؛ پروفایل خودکار ساخته می‌شود"
-                            else "کانفیگ معتبر ذخیره شده؛ اتصال آماده است"
+                            if (store.load() == null) "دکمه اتصال را بزن؛ Turbo مسیرها را تست می‌کند"
+                            else "مسیر سریع ذخیره شده؛ اتصال آماده است"
                         connectButton.text = "اتصال"
                     }
                 }
@@ -242,28 +257,10 @@ class MainActivity : Activity() {
                 return@launch
             }
 
-            var raw = store.load()
+            val raw = store.load()
             if (raw.isNullOrBlank()) {
-                stateText.text = "در حال ساخت اتصال…"
-                detailText.text = "در حال دریافت پروفایل خودکار WARP"
-                connectButton.isEnabled = false
-
-                raw = runCatching {
-                    withContext(Dispatchers.IO) {
-                        WarpProvisioner().createProfile()
-                    }
-                }.onSuccess { provisioned ->
-                    store.save(provisioned.profile)
-                    endpointText.text = "Server: " + provisioned.endpoint
-                    stateText.text = "آماده"
-                    detailText.text = "پروفایل خودکار ساخته شد"
-                }.onFailure { error ->
-                    stateText.text = "ساخت اتصال ناموفق"
-                    detailText.text = error.message ?: "WARP registration failed"
-                }.getOrNull()?.profile
-
-                connectButton.isEnabled = true
-                if (raw.isNullOrBlank()) return@launch
+                provisionAndTurboConnect()
+                return@launch
             }
 
             val permissionIntent = VpnService.prepare(this@MainActivity)
@@ -273,6 +270,82 @@ class MainActivity : Activity() {
                 startRealTunnel(raw)
             }
         }
+    }
+
+    private fun onTurboPressed() {
+        uiScope.launch {
+            if (SiperRuntime.backend.statusSnapshotActive()) {
+                runCatching { SiperRuntime.backend.stop(TUNNEL_ID) }
+            }
+            store.clear()
+            provisionAndTurboConnect()
+        }
+    }
+
+    private suspend fun provisionAndTurboConnect() {
+        stateText.text = "Turbo"
+        detailText.text = "در حال دریافت مسیرهای واقعی WARP…"
+        connectButton.isEnabled = false
+        turboButton.isEnabled = false
+
+        val candidates = runCatching {
+            withContext(Dispatchers.IO) {
+                WarpProvisioner().createProfiles(maxCandidates = 6)
+            }
+        }.onFailure { error ->
+            stateText.text = "ساخت مسیر ناموفق"
+            detailText.text = error.message ?: "WARP registration failed"
+        }.getOrNull()
+
+        if (candidates.isNullOrEmpty()) {
+            connectButton.isEnabled = true
+            turboButton.isEnabled = true
+            return
+        }
+
+        pendingTurboCandidates = candidates
+        val permissionIntent = VpnService.prepare(this@MainActivity)
+        if (permissionIntent != null) {
+            startActivityForResult(permissionIntent, REQUEST_VPN)
+        } else {
+            startTurbo(candidates)
+        }
+    }
+
+    private suspend fun startTurbo(
+        candidates: List<WarpProvisioner.Provisioned>
+    ) {
+        connectButton.isEnabled = false
+        turboButton.isEnabled = false
+        stateText.text = "Turbo Tuning"
+
+        runCatching {
+            TurboOptimizer(
+                backend = SiperRuntime.backend,
+                tunnelId = TUNNEL_ID
+            ).chooseFastest(candidates) { progress ->
+                detailText.text = progress
+            }
+        }.onSuccess { winner ->
+            store.save(winner.provisioned.profile)
+            pendingTurboCandidates = null
+            endpointText.text = "Server: " + winner.provisioned.endpoint
+            stateText.text = "Turbo متصل"
+            detailText.text = String.format(
+                Locale.US,
+                "%s • %.2f MB/s • Handshake %d ms",
+                winner.provisioned.label,
+                winner.megabytesPerSecond,
+                winner.handshakeMillis
+            )
+        }.onFailure { error ->
+            pendingTurboCandidates = null
+            stateText.text = "Turbo ناموفق"
+            detailText.text = error.message ?: error.javaClass.simpleName
+        }
+
+        connectButton.isEnabled = true
+        turboButton.isEnabled = true
     }
 
     private suspend fun startRealTunnel(raw: String) {
@@ -316,8 +389,13 @@ class MainActivity : Activity() {
 
         when (requestCode) {
             REQUEST_VPN -> {
-                val raw = store.load() ?: return
-                uiScope.launch { startRealTunnel(raw) }
+                val turbo = pendingTurboCandidates
+                if (!turbo.isNullOrEmpty()) {
+                    uiScope.launch { startTurbo(turbo) }
+                } else {
+                    val raw = store.load() ?: return
+                    uiScope.launch { startRealTunnel(raw) }
+                }
             }
 
             REQUEST_CONFIG -> {
