@@ -8,7 +8,7 @@ class WarpEndpointPlannerTest {
     @Test
     fun advertisedPreferredPortsComeFirst() {
         assertEquals(
-            listOf(443, 2408, 4500, 12345),
+            listOf(443, 2408, 500, 4500, 1701, 12345),
             WarpEndpointPlanner.preferredPorts(
                 listOf(12345, 4500, 2408, 443),
                 6
@@ -19,7 +19,7 @@ class WarpEndpointPlannerTest {
     @Test
     fun default2408ExistsWhenApiHasNoPorts() {
         assertEquals(
-            listOf(2408),
+            listOf(443, 2408, 500, 4500),
             WarpEndpointPlanner.preferredPorts(emptyList(), 4)
         )
     }
