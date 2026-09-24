@@ -16,8 +16,6 @@ class SiperTunnel : Tunnel {
         Tunnel.Feature.Recovery(
             seamlessRecovery = true,
             dynamicDnsRecovery = true,
-            ipv4Fallback = true,
-            ipv6Recovery = true,
             bounceDelaySeconds = 10
         )
     )
