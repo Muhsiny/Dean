@@ -10,8 +10,8 @@ android {
         applicationId = "com.siper.vpn"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.3.0-real"
+        versionCode = 5
+        versionName = "0.5.0-turbo"
     }
 
     buildTypes {
