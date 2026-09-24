@@ -43,7 +43,8 @@ public class MainActivity extends Activity {
     private SharedPreferences prefs;
     private EditText token, pageId, igId, objectId, postUrl, incoming, draft;
     private EditText goalFollowers, goalComments, goalReactions;
-    private TextView status, metrics, progressText;
+    private EditText simLike, simLove, simCare, simHaha, simWow, simSad, simAngry, simComments, simFollowers;
+    private TextView status, metrics, progressText, simOutput;
     private ProgressBar pFollowers, pComments, pReactions;
     private int followers = 0, comments = 0, reactions = 0;
 
@@ -166,7 +167,40 @@ public class MainActivity extends Activity {
         });
         root.addView(copy);
 
-        section(root, "۵) بازکردن مستقیم پست");
+
+        section(root, "۵) Engagement Lab — کنترل عددی");
+        simLike = numberField("Like");
+        simLove = numberField("Love");
+        simCare = numberField("Care");
+        simHaha = numberField("Haha");
+        simWow = numberField("Wow");
+        simSad = numberField("Sad");
+        simAngry = numberField("Angry");
+        simComments = numberField("تعداد کامنت");
+        simFollowers = numberField("تعداد فالوور");
+
+        simLike.setText("100");
+        simLove.setText("50");
+        simCare.setText("25");
+        simHaha.setText("20");
+        simWow.setText("10");
+        simSad.setText("5");
+        simAngry.setText("3");
+        simComments.setText("30");
+        simFollowers.setText("200");
+
+        root.addView(simLike); root.addView(simLove); root.addView(simCare);
+        root.addView(simHaha); root.addView(simWow); root.addView(simSad);
+        root.addView(simAngry); root.addView(simComments); root.addView(simFollowers);
+
+        Button simulate = button("اجرای سناریو");
+        root.addView(simulate);
+        simOutput = label("هنوز سناریویی اجرا نشده است.", 13, false);
+        simOutput.setTextIsSelectable(true);
+        root.addView(card(simOutput));
+        simulate.setOnClickListener(v -> runSimulation());
+
+        section(root, "۶) بازکردن مستقیم پست");
         postUrl = field("لینک پست Facebook یا Instagram", false);
         postUrl.setText(prefs.getString("postUrl", ""));
         root.addView(postUrl);
@@ -187,6 +221,64 @@ public class MainActivity extends Activity {
 
         setContentView(scroll);
         updateProgress();
+    }
+
+
+    private void runSimulation() {
+        int like = number(simLike, 0);
+        int love = number(simLove, 0);
+        int care = number(simCare, 0);
+        int haha = number(simHaha, 0);
+        int wow = number(simWow, 0);
+        int sad = number(simSad, 0);
+        int angry = number(simAngry, 0);
+        int cm = number(simComments, 0);
+        int fl = number(simFollowers, 0);
+
+        int total = like + love + care + haha + wow + sad + angry;
+        String[] first = {"احمد","محمد","علی","حسین","رضا","فاطمه","زهرا","مریم","سیدجلال","نرگس","حمید","شکیب","فرشته","سمیرا","جاوید","عارف"};
+        String[] last = {"احمدی","حسینی","محمدی","رضایی","هاشمی","موسوی","کریمی","عابدی","جعفری","نوری","رحیمی","اکبری","صادقی","بهشتی","کاظمی","محسنی"};
+
+        StringBuilder names = new StringBuilder();
+        int preview = Math.min(20, Math.max(cm, fl));
+        for (int i = 0; i < preview; i++) {
+            String n = first[i % first.length] + " " + last[(i * 3) % last.length];
+            names.append("• ").append(n);
+            if (i < Math.min(cm, preview)) {
+                names.append(" — ").append(sampleComment(i));
+            }
+            names.append("\n");
+        }
+
+        simOutput.setText(
+                "سناریو اجرا شد\n\n" +
+                "Like: " + like + "\n" +
+                "Love: " + love + "\n" +
+                "Care: " + care + "\n" +
+                "Haha: " + haha + "\n" +
+                "Wow: " + wow + "\n" +
+                "Sad: " + sad + "\n" +
+                "Angry: " + angry + "\n" +
+                "Total reactions: " + total + "\n" +
+                "Comments: " + cm + "\n" +
+                "Followers: " + fl + "\n\n" +
+                "نمونه پروفایل‌ها/کامنت‌ها:\n" + names
+        );
+        setStatus("سناریوی آزمایشی اجرا شد", false);
+    }
+
+    private String sampleComment(int i) {
+        String[] items = {
+                "عالی بود، موفق باشید.",
+                "تشکر از نشر این مطلب.",
+                "معلومات بسیار مفید بود.",
+                "موفقیت‌های بیشتر برایتان آرزو داریم.",
+                "لطفاً در این مورد بیشتر بنویسید.",
+                "بسیار خوب و قابل استفاده بود.",
+                "سپاس از زحمات شما.",
+                "این موضوع برای ما جالب بود."
+        };
+        return items[i % items.length];
     }
 
     private void fetchFacebookAccount() {
