@@ -2,17 +2,18 @@ package com.siper.vpn
 
 object WarpEndpointPlanner {
 
+    private val fallbackOrder =
+        listOf(443, 2408, 500, 4500, 1701, 4443, 8443)
+
     fun preferredPorts(discovered: List<Int>, maxCandidates: Int): List<Int> {
         require(maxCandidates > 0)
         val sane = discovered
             .filter { it in 1..65535 }
             .distinct()
 
-        val preference = listOf(443, 2408, 4500, 500, 1701, 4443, 8443)
-        val ordered = preference.filter { sane.contains(it) } +
-            sane.filterNot { preference.contains(it) }
-
-        return (ordered + listOf(2408))
+        // Keep a resilient fallback set even when the API advertises only one port.
+        // Unknown advertised ports are still retained after the well-known candidates.
+        return (fallbackOrder + sane.filterNot { fallbackOrder.contains(it) })
             .distinct()
             .take(maxCandidates)
     }
@@ -34,7 +35,6 @@ object WarpEndpointPlanner {
             }
         }
 
-        // Bare IPv6 has multiple colons and should not have its tail mistaken for a port.
         return value
     }
 
