@@ -43,7 +43,7 @@ class PsiphonFallbackVpnService : VpnService() {
                 PsiphonFallbackVpnService::class.java.name,
                 "logTun2Socks"
             )
-        }
+        }.onFailure { Log.w(TAG, "tun2socks logger unavailable", it) }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -83,7 +83,7 @@ class PsiphonFallbackVpnService : VpnService() {
                 override fun getPsiphonConfig(): String =
                     PsiphonFallbackConfig.render(
                         dataRootDirectory = filesDir.resolve("psiphon-rescue"),
-                        clientVersion = BuildConfig.VERSION_CODE.toString()
+                        clientVersion = installedVersionCode()
                     )
 
                 override fun bindToDevice(fileDescriptor: Long) {
@@ -140,6 +140,16 @@ class PsiphonFallbackVpnService : VpnService() {
             tunnel.startTunneling(embedded)
         } catch (t: Throwable) {
             fail(t.message ?: t.javaClass.simpleName)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun installedVersionCode(): String {
+        val info = packageManager.getPackageInfo(packageName, 0)
+        return if (Build.VERSION.SDK_INT >= 28) {
+            info.longVersionCode.toString()
+        } else {
+            info.versionCode.toString()
         }
     }
 

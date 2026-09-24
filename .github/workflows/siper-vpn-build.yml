@@ -51,6 +51,19 @@ jobs:
           test "$(grep -Ec '^[0-9A-Fa-f]+$' "$DEST")" -gt 100
           awk 'NF && $0 !~ /^[0-9A-Fa-f]+$/ { bad=1 } END { exit bad }' "$DEST"
 
+      - name: Fetch pinned official Psiphon tun2socks
+        run: |
+          set -euxo pipefail
+          APK=/tmp/PsiphonAndroid.apk
+          URL="https://raw.githubusercontent.com/Psiphon-Inc/psiphon-downloads/97db63b1128232ca84db4911e248b114e26b8197/Downloads/PsiphonAndroid.apk"
+          curl -fL --retry 4 --retry-all-errors --connect-timeout 15 --max-time 120 "$URL" -o "$APK"
+          test "$(git hash-object "$APK")" = "c95b9657453ac5fc7f2a48119270003a46973d08"
+          for ABI in arm64-v8a armeabi-v7a; do
+            mkdir -p "app/src/main/jniLibs/$ABI"
+            unzip -p "$APK" "lib/$ABI/libtun2socks.so" > "app/src/main/jniLibs/$ABI/libtun2socks.so"
+            test -s "app/src/main/jniLibs/$ABI/libtun2socks.so"
+          done
+
       - name: Source audit
         run: |
           set -euxo pipefail
@@ -75,8 +88,8 @@ jobs:
           set -euxo pipefail
           "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose /tmp/siper-pass1.apk
           unzip -t /tmp/siper-pass1.apk
-          unzip -l /tmp/siper-pass1.apk | grep -E 'lib/(arm64-v8a|armeabi-v7a)/.+\.so'
           unzip -l /tmp/siper-pass1.apk | grep -q 'lib/.*/libgojni.so'
+          unzip -l /tmp/siper-pass1.apk | grep -q 'lib/.*/libtun2socks.so'
           unzip -l /tmp/siper-pass1.apk | grep -q 'assets/psiphon_server_entries.txt'
           AAPT2="$ANDROID_HOME/build-tools/37.0.0/aapt2"
           "$AAPT2" dump xmltree --file AndroidManifest.xml /tmp/siper-pass1.apk > /tmp/manifest1.txt
@@ -107,6 +120,7 @@ jobs:
           "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose /tmp/siper-pass2.apk
           unzip -t /tmp/siper-pass2.apk
           unzip -l /tmp/siper-pass2.apk | grep -q 'lib/.*/libgojni.so'
+          unzip -l /tmp/siper-pass2.apk | grep -q 'lib/.*/libtun2socks.so'
           unzip -l /tmp/siper-pass2.apk | grep -q 'assets/psiphon_server_entries.txt'
           AAPT2="$ANDROID_HOME/build-tools/37.0.0/aapt2"
           "$AAPT2" dump xmltree --file AndroidManifest.xml /tmp/siper-pass2.apk > /tmp/manifest2.txt
