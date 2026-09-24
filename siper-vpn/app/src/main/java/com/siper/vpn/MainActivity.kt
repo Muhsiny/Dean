@@ -25,6 +25,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : Activity() {
 
@@ -223,7 +224,7 @@ class MainActivity : Activity() {
                     else -> {
                         stateText.text = if (store.load() == null) "کانفیگ لازم است" else "آماده"
                         detailText.text =
-                            if (store.load() == null) "یک فایل معتبر WireGuard/AWG وارد کن"
+                            if (store.load() == null) "برای اتصال، دکمه را بزن؛ پروفایل خودکار ساخته می‌شود"
                             else "کانفیگ معتبر ذخیره شده؛ اتصال آماده است"
                         connectButton.text = "اتصال"
                     }
@@ -241,11 +242,28 @@ class MainActivity : Activity() {
                 return@launch
             }
 
-            val raw = store.load()
+            var raw = store.load()
             if (raw.isNullOrBlank()) {
-                detailText.text = "اول کانفیگ واقعی سرور را وارد کن."
-                openConfigPicker()
-                return@launch
+                stateText.text = "در حال ساخت اتصال…"
+                detailText.text = "در حال دریافت پروفایل خودکار WARP"
+                connectButton.isEnabled = false
+
+                raw = runCatching {
+                    withContext(Dispatchers.IO) {
+                        WarpProvisioner().createProfile()
+                    }
+                }.onSuccess { provisioned ->
+                    store.save(provisioned.profile)
+                    endpointText.text = "Server: " + provisioned.endpoint
+                    stateText.text = "آماده"
+                    detailText.text = "پروفایل خودکار ساخته شد"
+                }.onFailure { error ->
+                    stateText.text = "ساخت اتصال ناموفق"
+                    detailText.text = error.message ?: "WARP registration failed"
+                }.getOrNull()?.profile
+
+                connectButton.isEnabled = true
+                if (raw.isNullOrBlank()) return@launch
             }
 
             val permissionIntent = VpnService.prepare(this@MainActivity)
@@ -335,7 +353,7 @@ class MainActivity : Activity() {
     private fun refreshImportedConfig() {
         val raw = store.load()
         if (raw.isNullOrBlank()) {
-            endpointText.text = "Server: —"
+            endpointText.text = "Server: Auto WARP"
             connectButton.isEnabled = true
             return
         }
