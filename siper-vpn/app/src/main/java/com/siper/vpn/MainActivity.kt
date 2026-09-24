@@ -41,6 +41,7 @@ class MainActivity : Activity() {
     private lateinit var stateText: TextView
     private lateinit var detailText: TextView
     private lateinit var endpointText: TextView
+    private lateinit var linkText: TextView
     private lateinit var connectButton: Button
     private lateinit var importButton: Button
     private lateinit var alwaysOnButton: Button
@@ -53,6 +54,7 @@ class MainActivity : Activity() {
         buildUi()
         refreshImportedConfig()
         observeBackend()
+        observeLinks()
 
         if (
             Build.VERSION.SDK_INT >= 33 &&
@@ -80,7 +82,7 @@ class MainActivity : Activity() {
         }
 
         val title = TextView(this).apply {
-            text = "Siper VPN"
+            text = "Siper Fusion"
             textSize = 30f
             setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -127,6 +129,15 @@ class MainActivity : Activity() {
             setPadding(0, dp(12), 0, 0)
         }
         statusCard.addView(endpointText)
+
+        linkText = TextView(this).apply {
+            text = "Path: در جستجوی بهترین لینک…"
+            textSize = 12f
+            gravity = Gravity.CENTER
+            setTextColor(muted)
+            setPadding(0, dp(10), 0, 0)
+        }
+        statusCard.addView(linkText)
 
         root.addView(
             statusCard,
@@ -244,6 +255,28 @@ class MainActivity : Activity() {
                         connectButton.text = "اتصال"
                     }
                 }
+            }
+        }
+    }
+
+
+    private fun observeLinks() {
+        uiScope.launch {
+            SiperRuntime.networkMonitor.linkStatus.collectLatest { link ->
+                val rtt = link.rttMs?.let { " • " + it + " ms" } ?: ""
+                val down = if (link.downstreamKbps > 0) {
+                    " • " + (link.downstreamKbps / 1000.0).let {
+                        String.format(java.util.Locale.US, "%.1f", it)
+                    } + " Mbps"
+                } else {
+                    ""
+                }
+                val count = if (link.availableLinks > 1) {
+                    " • " + link.availableLinks + " links"
+                } else {
+                    ""
+                }
+                linkText.text = "Path: " + link.label + down + rtt + count
             }
         }
     }
