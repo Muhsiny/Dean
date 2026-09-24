@@ -1,4 +1,4 @@
-name: Build Siper VPN APK
+name: Build and Deep-Verify Siper Fusion
 
 on:
   push:
@@ -16,34 +16,95 @@ jobs:
         working-directory: siper-vpn
     steps:
       - uses: actions/checkout@v7
+
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
+
       - name: Setup stable Android SDK base
         uses: android-actions/setup-android@v4
         with:
           cmdline-tools-version: "15859902"
           packages: "platform-tools"
+
       - name: Install current Android CLI
         run: |
           curl -fsSL https://dl.google.com/android/cli/latest/linux_x86_64/install.sh | bash
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
       - name: Install Android 37 canary platform
         run: |
           export PATH="$HOME/.local/bin:$PATH"
           android sdk install --canary platforms/android-37 build-tools/37.0.0
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.7.1"
-      - name: Build debug APK
-        run: gradle --stacktrace :app:assembleDebug
-      - name: Verify APK exists
-        run: test -f app/build/outputs/apk/debug/app-debug.apk
-      - name: Upload APK
+
+      - name: Source audit
+        run: |
+          set -euxo pipefail
+          grep -R --line-number "VpnService.prepare" app/src/main/java
+          grep -R --line-number "BackendMode.Vpn" app/src/main/java
+          grep -R --line-number "Tunnel.State.Up.Healthy" app/src/main/java
+          grep -R --line-number "measureDownloadMegabytesPerSecond" app/src/main/java
+          grep -R --line-number "TRANSPORT_SATELLITE" app/src/main/java
+          ! grep -R --line-number -E 'TODO|FIXME|mock connection|fake connection' app/src/main/java
+
+      - name: Pass 1 - unit tests, lint, build
+        run: |
+          set -euxo pipefail
+          gradle --stacktrace :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk /tmp/siper-pass1.apk
+
+      - name: Pass 1 - APK integrity
+        run: |
+          set -euxo pipefail
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose /tmp/siper-pass1.apk
+          unzip -t /tmp/siper-pass1.apk
+          unzip -l /tmp/siper-pass1.apk | grep -E 'lib/(arm64-v8a|armeabi-v7a|x86_64)/.+\.so'
+          AAPT2="$ANDROID_HOME/build-tools/37.0.0/aapt2"
+          "$AAPT2" dump xmltree --file AndroidManifest.xml /tmp/siper-pass1.apk > /tmp/manifest1.txt
+          grep -q "com.wgtunnel.backend.service.VpnService" /tmp/manifest1.txt
+          grep -q "android.permission.INTERNET" /tmp/manifest1.txt
+          sha256sum /tmp/siper-pass1.apk
+
+      - name: Network dependency smoke check
+        run: |
+          set -euxo pipefail
+          curl -fsS --max-time 15 "https://speed.cloudflare.com/__down?bytes=32768&cache=$(date +%s)" -o /tmp/speed.bin
+          test "$(wc -c < /tmp/speed.bin)" -ge 30000
+
+      - name: Pass 2 - clean rebuild
+        run: |
+          set -euxo pipefail
+          gradle clean
+          gradle --stacktrace :app:testDebugUnitTest :app:assembleDebug
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk /tmp/siper-pass2.apk
+
+      - name: Pass 2 - APK integrity
+        run: |
+          set -euxo pipefail
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose /tmp/siper-pass2.apk
+          unzip -t /tmp/siper-pass2.apk
+          unzip -l /tmp/siper-pass2.apk | grep -E 'lib/(arm64-v8a|armeabi-v7a|x86_64)/.+\.so'
+          AAPT2="$ANDROID_HOME/build-tools/37.0.0/aapt2"
+          "$AAPT2" dump xmltree --file AndroidManifest.xml /tmp/siper-pass2.apk > /tmp/manifest2.txt
+          grep -q "com.wgtunnel.backend.service.VpnService" /tmp/manifest2.txt
+          grep -q "android.permission.INTERNET" /tmp/manifest2.txt
+          sha256sum /tmp/siper-pass2.apk
+
+      - name: Final APK
+        run: |
+          cp /tmp/siper-pass2.apk app/build/outputs/apk/debug/SiperFusion-0.6.0-root-debug.apk
+
+      - name: Upload verified APK
         uses: actions/upload-artifact@v4
         with:
-          name: SiperVPN-real-debug
-          path: siper-vpn/app/build/outputs/apk/debug/app-debug.apk
+          name: SiperFusion-0.6.0-root-verified
+          path: siper-vpn/app/build/outputs/apk/debug/SiperFusion-0.6.0-root-debug.apk
           if-no-files-found: error
