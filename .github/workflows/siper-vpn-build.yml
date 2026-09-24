@@ -58,6 +58,10 @@ jobs:
           URL="https://raw.githubusercontent.com/Psiphon-Inc/psiphon-downloads/97db63b1128232ca84db4911e248b114e26b8197/Downloads/PsiphonAndroid.apk"
           curl -fL --retry 4 --retry-all-errors --connect-timeout 15 --max-time 120 "$URL" -o "$APK"
           test "$(git hash-object "$APK")" = "c95b9657453ac5fc7f2a48119270003a46973d08"
+          echo "=== official Psiphon APK native entries ==="
+          unzip -Z1 "$APK" | grep '^lib/' | head -200
+          echo "=== tun2socks matches ==="
+          unzip -Z1 "$APK" | grep -i 'tun2socks' || true
           for ABI in arm64-v8a armeabi-v7a; do
             mkdir -p "app/src/main/jniLibs/$ABI"
             unzip -p "$APK" "lib/$ABI/libtun2socks.so" > "app/src/main/jniLibs/$ABI/libtun2socks.so"
