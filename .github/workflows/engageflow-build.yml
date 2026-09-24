@@ -17,6 +17,7 @@ jobs:
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      SDKMANAGER: /usr/local/lib/android/sdk/cmdline-tools/16.0/bin/sdkmanager
 
     steps:
       - name: Checkout
@@ -29,10 +30,10 @@ jobs:
           java-version: '17'
 
       - name: Accept Android licenses
-        run: yes | sdkmanager --licenses >/dev/null || true
+        run: yes | "$SDKMANAGER" --licenses >/dev/null || true
 
       - name: Install Android SDK packages
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
