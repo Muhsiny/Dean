@@ -14,10 +14,11 @@ class WarpProvisioner {
 
     data class Provisioned(
         val profile: String,
-        val endpoint: String
+        val endpoint: String,
+        val label: String
     )
 
-    fun createProfile(): Provisioned {
+    fun createProfiles(maxCandidates: Int = 6): List<Provisioned> {
         val privateKey = Key.generatePrivateKey()
         val publicKey = Key.generatePublicKey(privateKey)
 
@@ -75,37 +76,93 @@ class WarpProvisioner {
         val peerPublicKey = peer.getString("public_key")
         val endpointObj = peer.getJSONObject("endpoint")
 
-        val endpoint = when {
-            endpointObj.optString("host").isNotBlank() ->
-                endpointObj.getString("host")
-            endpointObj.optString("v4").isNotBlank() -> {
-                val raw = endpointObj.getString("v4")
-                if (raw.contains(":") && raw.substringAfterLast(":").toIntOrNull() != null) {
-                    raw
-                } else {
-                    val ports = endpointObj.optJSONArray("ports")
-                    val port = if (ports != null && ports.length() > 0) ports.getInt(0) else 2408
-                    raw + ":" + port
+        val portsJson = endpointObj.optJSONArray("ports")
+        val discoveredPorts = buildList {
+            if (portsJson != null) {
+                for (i in 0 until portsJson.length()) {
+                    add(portsJson.getInt(i))
                 }
             }
-            else -> throw IllegalStateException("WARP endpoint missing")
         }
 
-        val profile = buildString {
-            appendLine("[Interface]")
-            appendLine("PrivateKey = " + privateKey.toBase64())
-            appendLine("Address = " + address4 + "/32, " + address6 + "/128")
-            appendLine("DNS = 1.1.1.1, 1.0.0.1, 2606:4700:4700::1111, 2606:4700:4700::1001")
-            appendLine("MTU = 1280")
-            appendLine()
-            appendLine("[Peer]")
-            appendLine("PublicKey = " + peerPublicKey)
-            appendLine("AllowedIPs = 0.0.0.0/0, ::/0")
-            appendLine("Endpoint = " + endpoint)
-            appendLine("PersistentKeepalive = 25")
+        val priority = listOf(443, 2408, 4500, 500, 1701, 4443, 8443)
+        val ports = (priority.filter { discoveredPorts.contains(it) } +
+            discoveredPorts.filterNot { priority.contains(it) } +
+            listOf(2408))
+            .distinct()
+            .take(maxCandidates)
+
+        val endpointHosts = buildList {
+            endpointObj.optString("v4").takeIf { it.isNotBlank() }?.let { raw ->
+                add(stripPort(raw))
+            }
+            endpointObj.optString("host").takeIf { it.isNotBlank() }?.let { raw ->
+                add(stripPort(raw))
+            }
+        }.distinct()
+
+        if (endpointHosts.isEmpty()) {
+            throw IllegalStateException("WARP endpoint missing")
         }
 
-        Config.parseQuickString(profile)
-        return Provisioned(profile = profile, endpoint = endpoint)
+        val candidates = mutableListOf<Provisioned>()
+        endpointHosts.forEach { host ->
+            ports.forEach { port ->
+                val endpoint = if (host.contains(":") && !host.contains(".")) {
+                    "[" + host + "]:" + port
+                } else {
+                    host + ":" + port
+                }
+                val profile = buildProfile(
+                    privateKey = privateKey.toBase64(),
+                    address4 = address4,
+                    address6 = address6,
+                    peerPublicKey = peerPublicKey,
+                    endpoint = endpoint
+                )
+                Config.parseQuickString(profile)
+                candidates += Provisioned(
+                    profile = profile,
+                    endpoint = endpoint,
+                    label = "WARP UDP " + port
+                )
+            }
+        }
+
+        return candidates.distinctBy { it.endpoint }.take(maxCandidates)
+    }
+
+    fun createProfile(): Provisioned = createProfiles(1).first()
+
+    private fun buildProfile(
+        privateKey: String,
+        address4: String,
+        address6: String,
+        peerPublicKey: String,
+        endpoint: String
+    ): String = buildString {
+        appendLine("[Interface]")
+        appendLine("PrivateKey = " + privateKey)
+        appendLine("Address = " + address4 + "/32, " + address6 + "/128")
+        appendLine("DNS = 1.1.1.1, 1.0.0.1, 2606:4700:4700::1111, 2606:4700:4700::1001")
+        appendLine("MTU = 1280")
+        appendLine()
+        appendLine("[Peer]")
+        appendLine("PublicKey = " + peerPublicKey)
+        appendLine("AllowedIPs = 0.0.0.0/0, ::/0")
+        appendLine("Endpoint = " + endpoint)
+        appendLine("PersistentKeepalive = 25")
+    }
+
+    private fun stripPort(raw: String): String {
+        val value = raw.trim()
+        if (value.startsWith("[") && value.contains("]")) {
+            return value.substringAfter("[").substringBefore("]")
+        }
+        val lastColon = value.lastIndexOf(':')
+        if (lastColon > 0 && value.substring(lastColon + 1).toIntOrNull() != null) {
+            return value.substring(0, lastColon)
+        }
+        return value
     }
 }
