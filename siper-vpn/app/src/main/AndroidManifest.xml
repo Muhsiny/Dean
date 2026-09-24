@@ -8,7 +8,7 @@
     <application
         android:name=".SiperApplication"
         android:allowBackup="false"
-        android:label="Siper VPN"
+        android:label="Siper Fusion VPN"
         android:supportsRtl="true"
         android:theme="@style/Theme.SiperVPN">
         <activity
