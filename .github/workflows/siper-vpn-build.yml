@@ -3,9 +3,6 @@ name: Build and Deep-Verify Siper Fusion
 on:
   push:
     branches: [ "siper-vpn-production" ]
-    paths:
-      - "siper-vpn/**"
-      - ".github/workflows/siper-vpn-build.yml"
   workflow_dispatch:
 
 jobs:
