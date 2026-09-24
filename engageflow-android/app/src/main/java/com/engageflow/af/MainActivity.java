@@ -27,11 +27,14 @@ import org.json.JSONObject;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -42,6 +45,7 @@ public class MainActivity extends Activity {
 
     private SharedPreferences prefs;
     private EditText token, pageId, igId, objectId, postUrl, incoming, draft;
+    private EditText adAccountId, campaignName;
     private EditText goalFollowers, goalComments, goalReactions;
     private EditText simLike, simLove, simCare, simHaha, simWow, simSad, simAngry, simComments, simFollowers;
     private TextView status, metrics, progressText, simOutput;
@@ -168,7 +172,34 @@ public class MainActivity extends Activity {
         root.addView(copy);
 
 
-        section(root, "۵) Engagement Lab — کنترل عددی");
+
+        section(root, "۵) کمپاین واقعی Meta — قابل‌دیدن برای مردم");
+        adAccountId = field("Meta Ad Account ID — فقط عدد، بدون act_", false);
+        campaignName = field("نام کمپاین Engagement", false);
+        adAccountId.setText(prefs.getString("adAccountId", ""));
+        campaignName.setText("EngageFlow Public Engagement");
+        root.addView(adAccountId);
+        root.addView(campaignName);
+
+        Button createCampaign = button("ساخت کمپاین واقعی Engagement — PAUSED");
+        root.addView(createCampaign);
+        createCampaign.setOnClickListener(v -> createPausedEngagementCampaign());
+
+        Button openAdsManager = button("بازکردن Meta Ads Manager برای تکمیل و فعال‌سازی");
+        root.addView(openAdsManager);
+        openAdsManager.setOnClickListener(v -> {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://adsmanager.facebook.com/adsmanager/manage/campaigns")));
+            } catch (Exception e) {
+                showError("Ads Manager باز نشد: " + e.getMessage());
+            }
+        });
+
+        TextView campaignNote = label("کمپاین با Objective = OUTCOME_ENGAGEMENT و حالت PAUSED ساخته می‌شود. پس از تکمیل Ad Set / Creative و فعال‌سازی در Ads Manager، تعامل واقعی روی همان Facebook/Instagram برای مردم قابل مشاهده است.", 12, false);
+        campaignNote.setTextColor(Color.DKGRAY);
+        root.addView(card(campaignNote));
+
+        section(root, "۶) Engagement Lab — کنترل عددی");
         simLike = numberField("Like");
         simLove = numberField("Love");
         simCare = numberField("Care");
@@ -200,7 +231,7 @@ public class MainActivity extends Activity {
         root.addView(card(simOutput));
         simulate.setOnClickListener(v -> runSimulation());
 
-        section(root, "۶) بازکردن مستقیم پست");
+        section(root, "۷) بازکردن مستقیم پست");
         postUrl = field("لینک پست Facebook یا Instagram", false);
         postUrl.setText(prefs.getString("postUrl", ""));
         root.addView(postUrl);
@@ -223,6 +254,74 @@ public class MainActivity extends Activity {
         updateProgress();
     }
 
+
+
+    private void createPausedEngagementCampaign() {
+        final String access = token.getText().toString().trim();
+        final String account = adAccountId.getText().toString().trim().replace("act_", "");
+        final String name = campaignName.getText().toString().trim().isEmpty()
+                ? "EngageFlow Public Engagement"
+                : campaignName.getText().toString().trim();
+
+        if (!required(access, "Meta Access Token") || !required(account, "Ad Account ID")) return;
+
+        prefs.edit().putString("adAccountId", account).apply();
+        setStatus("در حال ساخت کمپاین واقعی…", false);
+
+        io.execute(() -> {
+            try {
+                Map<String, String> params = new LinkedHashMap<>();
+                params.put("name", name);
+                params.put("objective", "OUTCOME_ENGAGEMENT");
+                params.put("status", "PAUSED");
+                params.put("special_ad_categories", "[]");
+                params.put("access_token", access);
+
+                String body = postForm("act_" + account + "/campaigns", params);
+                JSONObject o = new JSONObject(body);
+                String id = o.optString("id", "");
+
+                main.post(() -> {
+                    setStatus("کمپاین واقعی ساخته شد", false);
+                    metrics.setText(
+                            "Meta Engagement Campaign ساخته شد\n" +
+                            "Campaign ID: " + id + "\n" +
+                            "Status: PAUSED\n" +
+                            "Objective: OUTCOME_ENGAGEMENT\n\n" +
+                            "برای شروع تحویل واقعی، Ad Set و Creative را در Ads Manager تکمیل و فعال کن."
+                    );
+                });
+            } catch (Exception e) {
+                main.post(() -> showError(e.getMessage()));
+            }
+        });
+    }
+
+    private String postForm(String path, Map<String, String> params) throws Exception {
+        StringBuilder body = new StringBuilder();
+        for (Map.Entry<String, String> e : params.entrySet()) {
+            if (body.length() > 0) body.append('&');
+            body.append(URLEncoder.encode(e.getKey(), "UTF-8"))
+                    .append('=')
+                    .append(URLEncoder.encode(e.getValue(), "UTF-8"));
+        }
+
+        HttpURLConnection c = (HttpURLConnection) new URL(GRAPH + path).openConnection();
+        c.setConnectTimeout(15000);
+        c.setReadTimeout(20000);
+        c.setRequestMethod("POST");
+        c.setDoOutput(true);
+        c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+
+        try (OutputStream os = c.getOutputStream()) {
+            os.write(body.toString().getBytes(StandardCharsets.UTF_8));
+        }
+
+        int code = c.getResponseCode();
+        String response = read(code >= 400 ? c.getErrorStream() : c.getInputStream());
+        if (code >= 400) throw new Exception("Marketing API " + code + "\n" + response);
+        return response;
+    }
 
     private void runSimulation() {
         int like = number(simLike, 0);
