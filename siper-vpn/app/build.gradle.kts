@@ -4,12 +4,12 @@ plugins {
 
 android {
     namespace = "com.siper.vpn"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.siper.vpn"
         minSdk = 26
-        targetSdk = 37
+        targetSdk = 36
         versionCode = 3
         versionName = "0.3.0-real"
     }
