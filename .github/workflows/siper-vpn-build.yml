@@ -20,13 +20,19 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-      - name: Setup Android SDK
+      - name: Setup stable Android SDK base
         uses: android-actions/setup-android@v4
         with:
           cmdline-tools-version: "15859902"
           packages: "platform-tools"
-      - name: Install preview Android 37 SDK
-        run: sdkmanager --channel=3 "platforms;android-37" "build-tools;37.0.0"
+      - name: Install current Android CLI
+        run: |
+          curl -fsSL https://dl.google.com/android/cli/latest/linux_x86_64/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Install Android 37 canary platform
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          android sdk install --canary platforms/android-37 build-tools/37.0.0
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
