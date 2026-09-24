@@ -1,4 +1,4 @@
-name: Build and Deep-Verify Siper Fusion
+name: Build and Deep-Verify Siper Fusion Rescue
 
 on:
   push:
@@ -40,13 +40,26 @@ jobs:
         with:
           gradle-version: "9.7.1"
 
+      - name: Fetch and pin Psiphon bootstrap list
+        run: |
+          set -euxo pipefail
+          mkdir -p app/src/main/assets
+          URL="https://raw.githubusercontent.com/mbm110/MSN-GUARD/a6379f5d060bc7ca48a4c4ee015648afc8c07a05/app/src/main/assets/server_entries.txt"
+          DEST="app/src/main/assets/psiphon_server_entries.txt"
+          curl -fL --retry 4 --retry-all-errors --connect-timeout 15 --max-time 90 "$URL" -o "$DEST"
+          echo "6d6d10c4ef8eaf656cb9614513568f40d5590477fc25215507517d51fc6a293e  $DEST" | sha256sum -c -
+          test "$(grep -Ec '^[0-9A-Fa-f]+$' "$DEST")" -gt 100
+          awk 'NF && $0 !~ /^[0-9A-Fa-f]+$/ { bad=1 } END { exit bad }' "$DEST"
+
       - name: Source audit
         run: |
           set -euxo pipefail
           grep -R --line-number "VpnService.prepare" app/src/main/java
           grep -R --line-number "BackendMode.Vpn" app/src/main/java
           grep -R --line-number "Tunnel.State.Up.Healthy" app/src/main/java
-          grep -R --line-number "measureDownloadMegabytesPerSecond" app/src/main/java
+          grep -R --line-number "PsiphonTunnel" app/src/main/java
+          grep -R --line-number "Tun2SocksJniLoader.runTun2Socks" app/src/main/java
+          grep -R --line-number "bindToDevice" app/src/main/java
           grep -R --line-number "TRANSPORT_SATELLITE" app/src/main/java
           ! grep -R --line-number -E 'TODO|FIXME|mock connection|fake connection' app/src/main/java
 
@@ -62,24 +75,29 @@ jobs:
           set -euxo pipefail
           "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose /tmp/siper-pass1.apk
           unzip -t /tmp/siper-pass1.apk
-          unzip -l /tmp/siper-pass1.apk | grep -E 'lib/(arm64-v8a|armeabi-v7a|x86_64)/.+\.so'
+          unzip -l /tmp/siper-pass1.apk | grep -E 'lib/(arm64-v8a|armeabi-v7a)/.+\.so'
+          unzip -l /tmp/siper-pass1.apk | grep -q 'lib/.*/libgojni.so'
+          unzip -l /tmp/siper-pass1.apk | grep -q 'assets/psiphon_server_entries.txt'
           AAPT2="$ANDROID_HOME/build-tools/37.0.0/aapt2"
           "$AAPT2" dump xmltree --file AndroidManifest.xml /tmp/siper-pass1.apk > /tmp/manifest1.txt
           grep -q "com.wgtunnel.backend.service.VpnService" /tmp/manifest1.txt
+          grep -q "com.siper.vpn.PsiphonFallbackVpnService" /tmp/manifest1.txt
           grep -q "android.permission.INTERNET" /tmp/manifest1.txt
           sha256sum /tmp/siper-pass1.apk
 
-      - name: Network dependency smoke check
+      - name: Network dependency smoke checks
         run: |
           set -euxo pipefail
           curl -fsS --max-time 15 "https://speed.cloudflare.com/__down?bytes=32768&cache=$(date +%s)" -o /tmp/speed.bin
           test "$(wc -c < /tmp/speed.bin)" -ge 30000
+          curl -fL --retry 3 --connect-timeout 15 --max-time 45             "https://s3.amazonaws.com//psiphon/web/mjr4-p23r-puwl/server_list_compressed"             -o /tmp/psiphon-list
+          test -s /tmp/psiphon-list
 
       - name: Pass 2 - clean rebuild
         run: |
           set -euxo pipefail
           gradle clean
-          gradle --stacktrace :app:testDebugUnitTest :app:assembleDebug
+          gradle --stacktrace :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
           test -s app/build/outputs/apk/debug/app-debug.apk
           cp app/build/outputs/apk/debug/app-debug.apk /tmp/siper-pass2.apk
 
@@ -88,20 +106,22 @@ jobs:
           set -euxo pipefail
           "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose /tmp/siper-pass2.apk
           unzip -t /tmp/siper-pass2.apk
-          unzip -l /tmp/siper-pass2.apk | grep -E 'lib/(arm64-v8a|armeabi-v7a|x86_64)/.+\.so'
+          unzip -l /tmp/siper-pass2.apk | grep -q 'lib/.*/libgojni.so'
+          unzip -l /tmp/siper-pass2.apk | grep -q 'assets/psiphon_server_entries.txt'
           AAPT2="$ANDROID_HOME/build-tools/37.0.0/aapt2"
           "$AAPT2" dump xmltree --file AndroidManifest.xml /tmp/siper-pass2.apk > /tmp/manifest2.txt
           grep -q "com.wgtunnel.backend.service.VpnService" /tmp/manifest2.txt
+          grep -q "com.siper.vpn.PsiphonFallbackVpnService" /tmp/manifest2.txt
           grep -q "android.permission.INTERNET" /tmp/manifest2.txt
           sha256sum /tmp/siper-pass2.apk
 
       - name: Final APK
         run: |
-          cp /tmp/siper-pass2.apk app/build/outputs/apk/debug/SiperFusion-0.6.0-root-debug.apk
+          cp /tmp/siper-pass2.apk app/build/outputs/apk/debug/SiperFusion-0.7.0-rescue-debug.apk
 
       - name: Upload verified APK
         uses: actions/upload-artifact@v4
         with:
-          name: SiperFusion-0.6.0-root-verified
-          path: siper-vpn/app/build/outputs/apk/debug/SiperFusion-0.6.0-root-debug.apk
+          name: SiperFusion-0.7.0-rescue-verified
+          path: siper-vpn/app/build/outputs/apk/debug/SiperFusion-0.7.0-rescue-debug.apk
           if-no-files-found: error

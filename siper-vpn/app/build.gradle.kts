@@ -10,8 +10,8 @@ android {
         applicationId = "com.siper.vpn"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.6.0-root"
+        versionCode = 7
+        versionName = "0.7.0-rescue"
     }
 
     buildTypes {
@@ -25,6 +25,9 @@ android {
     }
 
     packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
         resources {
             excludes += setOf(
                 "/META-INF/{AL2.0,LGPL2.1}",
@@ -40,6 +43,8 @@ dependencies {
     implementation("com.wgtunnel:backend-android-jni:1.6.16")
     implementation("com.wgtunnel:hevtunnel:1.6.16")
     implementation("com.wgtunnel:parser:1.6.16")
+    implementation("ca.psiphon:psiphontunnel:2.0.41")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20260814")
 }

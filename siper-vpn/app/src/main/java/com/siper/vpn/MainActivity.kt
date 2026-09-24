@@ -2,7 +2,10 @@ package com.siper.vpn
 
 import android.Manifest
 import android.app.Activity
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.Uri
@@ -15,10 +18,10 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import java.util.Locale
 import com.wgtunnel.backend.Tunnel
 import com.wgtunnel.backend.model.BackendMode
 import com.wgtunnel.parser.Config
+import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,7 +37,10 @@ class MainActivity : Activity() {
         private const val REQUEST_VPN = 2001
         private const val REQUEST_CONFIG = 2002
         private const val REQUEST_NOTIFICATIONS = 2003
+        private const val REQUEST_VPN_FALLBACK = 2004
         private const val TUNNEL_ID = 1
+        private const val MODE_PREFS = "siper_mode"
+        private const val PREF_PREFER_PSIPHON = "prefer_psiphon"
     }
 
     private val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -48,11 +54,65 @@ class MainActivity : Activity() {
     private lateinit var alwaysOnButton: Button
     private lateinit var turboButton: Button
     private var pendingTurboCandidates: List<WarpProvisioner.Provisioned>? = null
+    private var psiphonRunning = false
+
+    private val fallbackReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.getStringExtra(PsiphonFallbackVpnService.EXTRA_STATE)) {
+                PsiphonFallbackVpnService.STATE_CONNECTING -> {
+                    psiphonRunning = true
+                    stateText.text = "Rescue در حال اتصال…"
+                    detailText.text =
+                        intent.getStringExtra(PsiphonFallbackVpnService.EXTRA_DETAIL)
+                            ?: "Psiphon در حال یافتن مسیر مقاوم"
+                    endpointText.text = "Carrier: Psiphon Rescue"
+                    connectButton.text = "قطع اتصال"
+                }
+
+                PsiphonFallbackVpnService.STATE_CONNECTED -> {
+                    psiphonRunning = true
+                    getSharedPreferences(MODE_PREFS, MODE_PRIVATE)
+                        .edit()
+                        .putBoolean(PREF_PREFER_PSIPHON, true)
+                        .apply()
+                    stateText.text = "متصل"
+                    detailText.text =
+                        intent.getStringExtra(PsiphonFallbackVpnService.EXTRA_DETAIL)
+                            ?: "Psiphon Rescue فعال است"
+                    endpointText.text = "Carrier: Psiphon Rescue"
+                    connectButton.text = "قطع اتصال"
+                    connectButton.isEnabled = true
+                    turboButton.isEnabled = true
+                }
+
+                PsiphonFallbackVpnService.STATE_FAILED -> {
+                    psiphonRunning = false
+                    stateText.text = "Rescue ناموفق"
+                    detailText.text =
+                        intent.getStringExtra(PsiphonFallbackVpnService.EXTRA_DETAIL)
+                            ?: "Psiphon نتوانست مسیر سالم پیدا کند"
+                    connectButton.text = "اتصال"
+                    connectButton.isEnabled = true
+                    turboButton.isEnabled = true
+                }
+
+                PsiphonFallbackVpnService.STATE_STOPPED -> {
+                    psiphonRunning = false
+                    stateText.text = "آماده"
+                    detailText.text = "تونل بسته شد"
+                    connectButton.text = "اتصال"
+                    connectButton.isEnabled = true
+                    turboButton.isEnabled = true
+                }
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = SecureConfigStore(this)
         buildUi()
+        registerFallbackReceiver()
         refreshImportedConfig()
         observeBackend()
         observeLinks()
@@ -69,6 +129,16 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun registerFallbackReceiver() {
+        val filter = IntentFilter(PsiphonFallbackVpnService.ACTION_STATE)
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(fallbackReceiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(fallbackReceiver, filter)
+        }
+    }
+
     private fun buildUi() {
         val background = Color.rgb(7, 17, 31)
         val card = Color.rgb(16, 31, 49)
@@ -82,21 +152,19 @@ class MainActivity : Activity() {
             setBackgroundColor(background)
         }
 
-        val title = TextView(this).apply {
-            text = "Siper Fusion"
+        root.addView(TextView(this).apply {
+            text = "Siper Fusion Rescue"
             textSize = 30f
             setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-        }
-        root.addView(title)
+        })
 
-        val subtitle = TextView(this).apply {
-            text = "Turbo Route Engine • WARP/WireGuard • تست سرعت واقعی"
+        root.addView(TextView(this).apply {
+            text = "WARP/WireGuard + Psiphon adaptive fallback"
             textSize = 14f
             setTextColor(muted)
             setPadding(0, dp(6), 0, dp(28))
-        }
-        root.addView(subtitle)
+        })
 
         val statusCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -114,7 +182,7 @@ class MainActivity : Activity() {
         statusCard.addView(stateText)
 
         detailText = TextView(this).apply {
-            text = "در انتظار کانفیگ"
+            text = "Auto carrier selection"
             textSize = 14f
             gravity = Gravity.CENTER
             setTextColor(muted)
@@ -123,7 +191,7 @@ class MainActivity : Activity() {
         statusCard.addView(detailText)
 
         endpointText = TextView(this).apply {
-            text = "Server: —"
+            text = "Carrier: Auto"
             textSize = 13f
             gravity = Gravity.CENTER
             setTextColor(mint)
@@ -162,6 +230,19 @@ class MainActivity : Activity() {
             ).apply { topMargin = dp(24) }
         )
 
+        turboButton = Button(this).apply {
+            text = "Auto Rescue — سریع‌ترین مسیر سالم"
+            isAllCaps = false
+            setOnClickListener { onTurboPressed() }
+        }
+        root.addView(
+            turboButton,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(56)
+            ).apply { topMargin = dp(12) }
+        )
+
         importButton = Button(this).apply {
             text = "وارد کردن کانفیگ WireGuard / AmneziaWG"
             isAllCaps = false
@@ -169,19 +250,6 @@ class MainActivity : Activity() {
         }
         root.addView(
             importButton,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(56)
-            ).apply { topMargin = dp(12) }
-        )
-
-        turboButton = Button(this).apply {
-            text = "Turbo Auto-Tune — پیدا کردن سریع‌ترین مسیر"
-            isAllCaps = false
-            setOnClickListener { onTurboPressed() }
-        }
-        root.addView(
-            turboButton,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dp(56)
@@ -203,14 +271,13 @@ class MainActivity : Activity() {
             ).apply { topMargin = dp(12) }
         )
 
-        val privacy = TextView(this).apply {
-            text = "کلید خصوصی کانفیگ با AES-256-GCM در Android Keystore نگه‌داری می‌شود. هیچ تبلیغ، حساب کاربری یا ردیاب در این نسخه وجود ندارد."
+        root.addView(TextView(this).apply {
+            text = "اگر WARP/UDP در شبکه مسدود باشد، برنامه خودکار به Psiphon Rescue با transportهای سازگار با شبکه‌های محدودشده می‌رود."
             textSize = 12f
             setTextColor(muted)
             gravity = Gravity.CENTER
             setPadding(0, dp(26), 0, 0)
-        }
-        root.addView(privacy)
+        })
 
         val scroll = ScrollView(this).apply {
             addView(root)
@@ -222,23 +289,24 @@ class MainActivity : Activity() {
     private fun observeBackend() {
         uiScope.launch {
             SiperRuntime.backend.status.collectLatest { status ->
+                if (psiphonRunning) return@collectLatest
                 val active = status.activeTunnels[TUNNEL_ID]
                 when (active?.transportState) {
                     is Tunnel.State.Up.Healthy -> {
                         stateText.text = "متصل"
-                        detailText.text = "Handshake سالم • تونل واقعی فعال است"
+                        detailText.text = "Handshake سالم • WireGuard فعال است"
                         connectButton.text = "قطع اتصال"
                     }
 
                     is Tunnel.State.Up.HandshakeFailure -> {
-                        stateText.text = "تونل فعال"
-                        detailText.text = "Handshake با سرور پاسخ نداده؛ Endpoint یا شبکه را بررسی کن"
+                        stateText.text = "WARP پاسخ نداد"
+                        detailText.text = "در حال آماده‌سازی Rescue fallback"
                         connectButton.text = "قطع اتصال"
                     }
 
                     is Tunnel.State.Starting -> {
                         stateText.text = "در حال اتصال…"
-                        detailText.text = "در حال ساخت TUN و برقراری Handshake"
+                        detailText.text = "Handshake واقعی در حال آزمایش است"
                         connectButton.text = "در حال اتصال…"
                     }
 
@@ -249,10 +317,10 @@ class MainActivity : Activity() {
                     }
 
                     else -> {
-                        stateText.text = if (store.load() == null) "کانفیگ لازم است" else "آماده"
+                        stateText.text = "آماده"
                         detailText.text =
-                            if (store.load() == null) "دکمه اتصال را بزن؛ Turbo مسیرها را تست می‌کند"
-                            else "مسیر سریع ذخیره شده؛ اتصال آماده است"
+                            if (preferPsiphon()) "Psiphon Rescue برای این شبکه ترجیح داده می‌شود"
+                            else "WARP اول؛ در صورت بلوک، Psiphon Rescue خودکار"
                         connectButton.text = "اتصال"
                     }
                 }
@@ -260,65 +328,75 @@ class MainActivity : Activity() {
         }
     }
 
-
     private fun observeLinks() {
         uiScope.launch {
             SiperRuntime.networkMonitor.linkStatus.collectLatest { link ->
-                val rtt = link.rttMs?.let { " • " + it + " ms" } ?: ""
+                val rtt = link.rttMs?.let { " • $it ms" } ?: ""
                 val down = if (link.downstreamKbps > 0) {
-                    " • " + (link.downstreamKbps / 1000.0).let {
-                        String.format(java.util.Locale.US, "%.1f", it)
-                    } + " Mbps"
-                } else {
-                    ""
-                }
+                    " • " + String.format(
+                        Locale.US,
+                        "%.1f Mbps",
+                        link.downstreamKbps / 1000.0
+                    )
+                } else ""
                 val count = if (link.availableLinks > 1) {
-                    " • " + link.availableLinks + " links"
-                } else {
-                    ""
-                }
-                linkText.text = "Path: " + link.label + down + rtt + count
+                    " • ${link.availableLinks} links"
+                } else ""
+                linkText.text = "Path: ${link.label}$down$rtt$count"
             }
         }
     }
 
     private fun onConnectPressed() {
         uiScope.launch {
-            val active = SiperRuntime.backend.statusSnapshotActive()
-            if (active) {
+            if (psiphonRunning) {
+                stopPsiphonFallback()
+                return@launch
+            }
+
+            if (SiperRuntime.backend.statusSnapshotActive()) {
                 stateText.text = "در حال قطع…"
                 SiperRuntime.backend.stop(TUNNEL_ID)
                 return@launch
             }
 
             val raw = store.load()
-            if (raw.isNullOrBlank()) {
-                provisionAndTurboConnect()
+            if (!raw.isNullOrBlank()) {
+                val permissionIntent = VpnService.prepare(this@MainActivity)
+                if (permissionIntent != null) {
+                    startActivityForResult(permissionIntent, REQUEST_VPN)
+                } else {
+                    startRealTunnel(raw)
+                }
                 return@launch
             }
 
-            val permissionIntent = VpnService.prepare(this@MainActivity)
-            if (permissionIntent != null) {
-                startActivityForResult(permissionIntent, REQUEST_VPN)
+            if (preferPsiphon()) {
+                requestOrStartPsiphonFallback()
             } else {
-                startRealTunnel(raw)
+                provisionAndTurboConnect()
             }
         }
     }
 
     private fun onTurboPressed() {
         uiScope.launch {
+            if (psiphonRunning) stopPsiphonFallback()
             if (SiperRuntime.backend.statusSnapshotActive()) {
                 runCatching { SiperRuntime.backend.stop(TUNNEL_ID) }
             }
+            getSharedPreferences(MODE_PREFS, MODE_PRIVATE)
+                .edit()
+                .putBoolean(PREF_PREFER_PSIPHON, false)
+                .apply()
             store.clear()
             provisionAndTurboConnect()
         }
     }
 
     private suspend fun provisionAndTurboConnect() {
-        stateText.text = "Turbo"
-        detailText.text = "در حال دریافت مسیرهای واقعی WARP…"
+        stateText.text = "Auto Rescue"
+        detailText.text = "ابتدا مسیرهای WARP آزمایش می‌شود…"
         connectButton.isEnabled = false
         turboButton.isEnabled = false
 
@@ -326,14 +404,14 @@ class MainActivity : Activity() {
             withContext(Dispatchers.IO) {
                 WarpProvisioner().createProfiles(maxCandidates = 6)
             }
-        }.onFailure { error ->
-            stateText.text = "ساخت مسیر ناموفق"
-            detailText.text = error.message ?: "WARP registration failed"
         }.getOrNull()
 
         if (candidates.isNullOrEmpty()) {
             connectButton.isEnabled = true
             turboButton.isEnabled = true
+            stateText.text = "WARP در دسترس نیست"
+            detailText.text = "رفتن به Psiphon Rescue…"
+            requestOrStartPsiphonFallback()
             return
         }
 
@@ -346,12 +424,10 @@ class MainActivity : Activity() {
         }
     }
 
-    private suspend fun startTurbo(
-        candidates: List<WarpProvisioner.Provisioned>
-    ) {
+    private suspend fun startTurbo(candidates: List<WarpProvisioner.Provisioned>) {
         connectButton.isEnabled = false
         turboButton.isEnabled = false
-        stateText.text = "Turbo Tuning"
+        stateText.text = "WARP Tuning"
 
         runCatching {
             TurboOptimizer(
@@ -363,24 +439,60 @@ class MainActivity : Activity() {
         }.onSuccess { winner ->
             store.save(winner.provisioned.profile)
             pendingTurboCandidates = null
-            endpointText.text = "Server: " + winner.provisioned.endpoint
-            stateText.text = "Turbo متصل"
+            endpointText.text = "Carrier: ${winner.provisioned.label}"
+            stateText.text = "متصل"
             detailText.text = String.format(
                 Locale.US,
-                "%s • %.2f MB/s • Handshake %d ms",
-                winner.provisioned.label,
+                "%.2f MB/s • Handshake %d ms",
                 winner.megabytesPerSecond,
                 winner.handshakeMillis
             )
-        }.onFailure { error ->
+            connectButton.isEnabled = true
+            turboButton.isEnabled = true
+        }.onFailure {
             pendingTurboCandidates = null
-            stateText.text = "Turbo ناموفق"
-            detailText.text = error.message ?: error.javaClass.simpleName
+            connectButton.isEnabled = true
+            turboButton.isEnabled = true
+            stateText.text = "WARP مسدود"
+            detailText.text = "تغییر خودکار به Psiphon Rescue…"
+            requestOrStartPsiphonFallback()
         }
-
-        connectButton.isEnabled = true
-        turboButton.isEnabled = true
     }
+
+    private fun requestOrStartPsiphonFallback() {
+        val permissionIntent = VpnService.prepare(this)
+        if (permissionIntent != null) {
+            startActivityForResult(permissionIntent, REQUEST_VPN_FALLBACK)
+        } else {
+            startPsiphonFallback()
+        }
+    }
+
+    private fun startPsiphonFallback() {
+        psiphonRunning = true
+        stateText.text = "Rescue در حال اتصال…"
+        detailText.text = "Psiphon در حال کشف transport سالم است"
+        endpointText.text = "Carrier: Psiphon Rescue"
+        connectButton.text = "قطع اتصال"
+        val intent = Intent(this, PsiphonFallbackVpnService::class.java)
+            .setAction(PsiphonFallbackVpnService.ACTION_START)
+        if (Build.VERSION.SDK_INT >= 26) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
+    }
+
+    private fun stopPsiphonFallback() {
+        stateText.text = "در حال قطع…"
+        val intent = Intent(this, PsiphonFallbackVpnService::class.java)
+            .setAction(PsiphonFallbackVpnService.ACTION_STOP)
+        startService(intent)
+    }
+
+    private fun preferPsiphon(): Boolean =
+        getSharedPreferences(MODE_PREFS, MODE_PRIVATE)
+            .getBoolean(PREF_PREFER_PSIPHON, false)
 
     private suspend fun startRealTunnel(raw: String) {
         runCatching {
@@ -389,13 +501,11 @@ class MainActivity : Activity() {
             require(config.peers.any { !it.endpoint.isNullOrBlank() }) {
                 "Endpoint سرور در کانفیگ وجود ندارد"
             }
-
-            val result = SiperRuntime.backend.start(
+            SiperRuntime.backend.start(
                 tunnel = SiperTunnel(),
                 mode = BackendMode.Vpn(config),
                 tunnelDnsConfig = null
-            )
-            result.getOrThrow()
+            ).getOrThrow()
         }.onFailure { error ->
             stateText.text = "اتصال ناموفق"
             detailText.text = error.message ?: error.javaClass.simpleName
@@ -409,7 +519,11 @@ class MainActivity : Activity() {
             type = "*/*"
             putExtra(
                 Intent.EXTRA_MIME_TYPES,
-                arrayOf("text/plain", "application/octet-stream", "application/x-wireguard-profile")
+                arrayOf(
+                    "text/plain",
+                    "application/octet-stream",
+                    "application/x-wireguard-profile"
+                )
             )
         }
         startActivityForResult(intent, REQUEST_CONFIG)
@@ -418,8 +532,11 @@ class MainActivity : Activity() {
     @Deprecated("Deprecated in Android API, kept for broad device compatibility")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-
-        if (resultCode != RESULT_OK) return
+        if (resultCode != RESULT_OK) {
+            connectButton.isEnabled = true
+            turboButton.isEnabled = true
+            return
+        }
 
         when (requestCode) {
             REQUEST_VPN -> {
@@ -431,6 +548,8 @@ class MainActivity : Activity() {
                     uiScope.launch { startRealTunnel(raw) }
                 }
             }
+
+            REQUEST_VPN_FALLBACK -> startPsiphonFallback()
 
             REQUEST_CONFIG -> {
                 val uri = data?.data ?: return
@@ -453,6 +572,10 @@ class MainActivity : Activity() {
             }
 
             store.save(raw)
+            getSharedPreferences(MODE_PREFS, MODE_PRIVATE)
+                .edit()
+                .putBoolean(PREF_PREFER_PSIPHON, false)
+                .apply()
             refreshImportedConfig()
             stateText.text = "کانفیگ معتبر"
             detailText.text = "کلیدها رمزگذاری و ذخیره شدند"
@@ -465,7 +588,9 @@ class MainActivity : Activity() {
     private fun refreshImportedConfig() {
         val raw = store.load()
         if (raw.isNullOrBlank()) {
-            endpointText.text = "Server: Auto WARP"
+            endpointText.text =
+                if (preferPsiphon()) "Carrier: Psiphon Rescue"
+                else "Carrier: Auto WARP → Psiphon Rescue"
             connectButton.isEnabled = true
             return
         }
@@ -486,6 +611,7 @@ class MainActivity : Activity() {
         (value * resources.displayMetrics.density).toInt()
 
     override fun onDestroy() {
+        runCatching { unregisterReceiver(fallbackReceiver) }
         uiScope.cancel()
         super.onDestroy()
     }
