@@ -244,7 +244,7 @@ class UnderlayNetworkMonitor(context: Context) : NetworkMonitor {
     private fun transportLabel(caps: NetworkCapabilities): String {
         return when {
             Build.VERSION.SDK_INT >= 35 &&
-                caps.hasTransport(NetworkCapabilities.TRANSPORT_SATELLITE) -> "Satellite / Starlink uplink"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_SATELLITE) -> "Satellite uplink"
             caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
             caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi‑Fi"
             caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "Mobile data"
