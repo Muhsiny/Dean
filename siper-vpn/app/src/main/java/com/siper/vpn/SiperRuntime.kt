@@ -16,12 +16,15 @@ object SiperRuntime {
     lateinit var backend: Backend
         private set
 
+    lateinit var networkMonitor: UnderlayNetworkMonitor
+        private set
+
     @Synchronized
     fun init(application: Application) {
         if (initialized) return
 
         val provider = SiperNotificationProvider(application.applicationContext)
-        val networkMonitor = UnderlayNetworkMonitor(application.applicationContext)
+        networkMonitor = UnderlayNetworkMonitor(application.applicationContext)
         backend = TunnelBackend(
             scope = scope,
             applicationProvider = provider,
