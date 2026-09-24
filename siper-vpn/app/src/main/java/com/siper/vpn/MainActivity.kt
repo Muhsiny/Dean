@@ -15,6 +15,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import java.util.Locale
 import com.wgtunnel.backend.Tunnel
 import com.wgtunnel.backend.model.BackendMode
 import com.wgtunnel.parser.Config
