@@ -10,8 +10,8 @@ android {
         applicationId = "com.siper.vpn"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.5.0-turbo"
+        versionCode = 6
+        versionName = "0.6.0-root"
     }
 
     buildTypes {
@@ -41,4 +41,5 @@ dependencies {
     implementation("com.wgtunnel:hevtunnel:1.6.16")
     implementation("com.wgtunnel:parser:1.6.16")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    testImplementation("junit:junit:4.13.2")
 }
