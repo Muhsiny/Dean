@@ -85,19 +85,17 @@ class WarpProvisioner {
             }
         }
 
-        val priority = listOf(443, 2408, 4500, 500, 1701, 4443, 8443)
-        val ports = (priority.filter { discoveredPorts.contains(it) } +
-            discoveredPorts.filterNot { priority.contains(it) } +
-            listOf(2408))
-            .distinct()
-            .take(maxCandidates)
+        val ports = WarpEndpointPlanner.preferredPorts(
+            discovered = discoveredPorts,
+            maxCandidates = maxCandidates
+        )
 
         val endpointHosts = buildList {
             endpointObj.optString("v4").takeIf { it.isNotBlank() }?.let { raw ->
-                add(stripPort(raw))
+                add(WarpEndpointPlanner.stripPort(raw))
             }
             endpointObj.optString("host").takeIf { it.isNotBlank() }?.let { raw ->
-                add(stripPort(raw))
+                add(WarpEndpointPlanner.stripPort(raw))
             }
         }.distinct()
 
@@ -108,11 +106,7 @@ class WarpProvisioner {
         val candidates = mutableListOf<Provisioned>()
         endpointHosts.forEach { host ->
             ports.forEach { port ->
-                val endpoint = if (host.contains(":") && !host.contains(".")) {
-                    "[" + host + "]:" + port
-                } else {
-                    host + ":" + port
-                }
+                val endpoint = WarpEndpointPlanner.endpoint(host, port)
                 val profile = buildProfile(
                     privateKey = privateKey.toBase64(),
                     address4 = address4,
@@ -154,15 +148,5 @@ class WarpProvisioner {
         appendLine("PersistentKeepalive = 25")
     }
 
-    private fun stripPort(raw: String): String {
-        val value = raw.trim()
-        if (value.startsWith("[") && value.contains("]")) {
-            return value.substringAfter("[").substringBefore("]")
-        }
-        val lastColon = value.lastIndexOf(':')
-        if (lastColon > 0 && value.substring(lastColon + 1).toIntOrNull() != null) {
-            return value.substring(0, lastColon)
-        }
-        return value
-    }
 }
+
