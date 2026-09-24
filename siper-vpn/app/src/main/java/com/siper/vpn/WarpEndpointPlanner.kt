@@ -2,8 +2,11 @@ package com.siper.vpn
 
 object WarpEndpointPlanner {
 
-    private val fallbackOrder =
-        listOf(443, 2408, 500, 4500, 1701, 4443, 8443)
+    private val primaryFallback =
+        listOf(443, 2408, 500, 4500, 1701)
+
+    private val secondaryFallback =
+        listOf(4443, 8443)
 
     fun preferredPorts(discovered: List<Int>, maxCandidates: Int): List<Int> {
         require(maxCandidates > 0)
@@ -13,7 +16,10 @@ object WarpEndpointPlanner {
 
         // Keep a resilient fallback set even when the API advertises only one port.
         // Unknown advertised ports are still retained after the well-known candidates.
-        return (fallbackOrder + sane.filterNot { fallbackOrder.contains(it) })
+        val custom = sane.filterNot {
+            primaryFallback.contains(it) || secondaryFallback.contains(it)
+        }
+        return (primaryFallback + custom + secondaryFallback)
             .distinct()
             .take(maxCandidates)
     }
