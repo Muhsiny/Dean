@@ -25,7 +25,9 @@ jobs:
         with:
           cmdline-tools-version: "15859902"
           packages: "platform-tools"
-      - name: Install preview Android 37 SDK\n        run: sdkmanager --channel=3 "platforms;android-37" "build-tools;37.0.0"\n      - name: Setup Gradle
+      - name: Install preview Android 37 SDK
+        run: sdkmanager --channel=3 "platforms;android-37" "build-tools;37.0.0"
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.7.1"
