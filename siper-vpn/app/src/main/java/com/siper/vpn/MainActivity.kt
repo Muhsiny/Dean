@@ -11,7 +11,6 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
-import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -24,6 +23,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class MainActivity : Activity() {
@@ -362,5 +362,5 @@ class MainActivity : Activity() {
 }
 
 private suspend fun com.wgtunnel.backend.Backend.statusSnapshotActive(): Boolean {
-    return kotlinx.coroutines.flow.first(status).activeTunnels.isNotEmpty()
+    return status.first().activeTunnels.isNotEmpty()
 }
