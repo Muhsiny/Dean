@@ -439,4 +439,22 @@ def harden_tls_v3(s):
 edit('core/edge.go', harden_tls_v3)
 edit('core/core.go', harden_tls_v3)
 
+
+def harden_tls_v4(s):
+    # If an enrolled peer key exists, use registration-time public-key pinning
+    # and disable TLS resumption so the verifier cannot be bypassed. For legacy
+    # registrations without a pin, fall back to normal CA/hostname validation.
+    s=re.sub(r'\n\tif verifyEdge == nil \{\n\t\treturn nil, fmt\.Errorf\("注册信息缺少 WARP 边缘公钥，请重新注册"\)\n\t\}', '', s)
+    s=s.replace(
+        'InsecureSkipVerify:    true, // #nosec G402 -- mandatory Cloudflare registration key pin\n\t\tSessionTicketsDisabled: true,',
+        'InsecureSkipVerify:    verifyEdge != nil,\n\t\tSessionTicketsDisabled: verifyEdge != nil,'
+    )
+    s=s.replace(
+        'InsecureSkipVerify:    true, // #nosec G402 -- Cloudflare WARP registration-time ECDSA public-key pin is mandatory below\\n\\t\\tSessionTicketsDisabled: true,',
+        'InsecureSkipVerify:    verifyEdge != nil,\n\t\tSessionTicketsDisabled: verifyEdge != nil,'
+    )
+    return s
+edit('core/edge.go', harden_tls_v4)
+edit('core/core.go', harden_tls_v4)
+
 print('SAYEH Stability 1.1 patch complete.')
