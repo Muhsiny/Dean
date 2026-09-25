@@ -419,4 +419,23 @@ def harden_pool_v2(s):
     return s
 edit('core/pool.go', harden_pool_v2)
 
+
+def harden_tls_v3(s):
+    if 'SessionTicketsDisabled:' not in s:
+        s=s.replace('InsecureSkipVerify:    true,', '''InsecureSkipVerify:    true, // #nosec G402 -- mandatory Cloudflare registration key pin
+		SessionTicketsDisabled: true,''')
+    if 'if verifyEdge == nil {' not in s:
+        needle='''verifyEdge, err := regData.PeerPublicKeyVerifier()
+	if err != nil {
+		return nil, fmt.Errorf("边缘公钥固定初始化失败：%w", err)
+	}'''
+        repl=needle+'''
+	if verifyEdge == nil {
+		return nil, fmt.Errorf("注册信息缺少 WARP 边缘公钥，请重新注册")
+	}'''
+        s=s.replace(needle,repl,1)
+    return s
+edit('core/edge.go', harden_tls_v3)
+edit('core/core.go', harden_tls_v3)
+
 print('SAYEH Stability 1.1 patch complete.')
