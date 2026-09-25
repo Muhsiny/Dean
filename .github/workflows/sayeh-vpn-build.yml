@@ -1,0 +1,161 @@
+name: Build SAYEH VPN Android
+
+on:
+  push:
+    branches:
+      - sayeh-vpn-build-20260925
+    paths:
+      - 'sayeh-build/**'
+      - '.github/workflows/sayeh-vpn-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      NDK_VERSION: 26.3.11579264
+      VERSION_NAME: 0.9.0
+    steps:
+      - name: Checkout build patch
+        uses: actions/checkout@v4
+
+      - name: Clone audited VPN engine
+        run: git clone --depth 1 --branch v0.6.6 https://github.com/callacat/warp-go.git upstream
+
+      - name: Apply SAYEH source patch
+        run: |
+          python3 sayeh-build/apply_patch.py upstream
+          grep -q 'applicationId "org.sayeh.vpn"' upstream/gui/build/android/app/build.gradle
+          grep -q 'SAYEH VPN' upstream/gui/build/android/app/src/main/res/values/strings.xml
+          grep -q 'const androidSelfPackage = "org.sayeh.vpn"' upstream/gui/androidbridge.go
+          grep -q 'package com.wails.app;' upstream/gui/build/android/app/src/main/java/com/wails/app/MainActivity.java
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android platform, build-tools and NDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;\${NDK_VERSION}"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/\${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Setup Go 1.26
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.x'
+          check-latest: true
+          cache: false
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Wails 3 CLI
+        run: |
+          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha2.119
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Prepare Go and Wails Android overlay
+        working-directory: upstream/gui
+        run: |
+          go mod tidy
+          wails3 android overlay:gen -out build/android/overlay.json -config build/config.yml
+          wails3 generate bindings -ts -f '-tags android' -clean=true
+
+      - name: Build Persian RTL frontend
+        working-directory: upstream/gui/frontend
+        run: |
+          npm ci
+          npm run build
+          test -s dist/index.html
+
+      - name: Bundle GEO databases
+        working-directory: upstream/gui/build/android/app/src/main
+        run: |
+          mkdir -p assets/geo
+          for f in geosite.dat geoip-lite.dat; do
+            [ -s "assets/geo/$f" ] && continue
+            curl -fL --retry 3 --connect-timeout 20 -o "assets/geo/$f" "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/$f" || rm -f "assets/geo/$f"
+          done
+
+      - name: Compile native engine arm64
+        working-directory: upstream/gui
+        env:
+          CC: \${{ env.ANDROID_NDK_HOME }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang
+          CGO_ENABLED: '1'
+          GOOS: android
+          GOARCH: arm64
+        run: |
+          mkdir -p build/android/app/src/main/jniLibs/arm64-v8a
+          go build -buildmode=c-shared -overlay build/android/overlay.json -tags production,android,with_gvisor -trimpath -buildvcs=false -ldflags="-w -s -X main.version=0.9.0" -o build/android/app/src/main/jniLibs/arm64-v8a/libwails.so
+
+      - name: Compile native engine x86_64
+        working-directory: upstream/gui
+        env:
+          CC: \${{ env.ANDROID_NDK_HOME }}/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android21-clang
+          CGO_ENABLED: '1'
+          GOOS: android
+          GOARCH: amd64
+        run: |
+          mkdir -p build/android/app/src/main/jniLibs/x86_64
+          go build -buildmode=c-shared -overlay build/android/overlay.json -tags production,android,with_gvisor -trimpath -buildvcs=false -ldflags="-w -s -X main.version=0.9.0" -o build/android/app/src/main/jniLibs/x86_64/libwails.so
+
+      - name: JNI contract checks
+        working-directory: upstream/gui
+        run: |
+          grep -qE 'int +nativeStartVpn *\(int fd, String dnsList\)' build/android/app/src/main/java/com/wails/app/WarpVpnService.java
+          grep -qE 'Java_com_wails_app_WarpVpnService_nativeStartVpn.*C\.jint' androidbridge.go
+          grep -qE 'int +nativeStopVpn *\(\)' build/android/app/src/main/java/com/wails/app/WarpVpnService.java
+          grep -qE 'Java_com_wails_app_WarpVpnService_nativeStopVpn.*C\.jint' androidbridge.go
+          grep -qE 'static +boolean +protectSocket *\(int fd\)' build/android/app/src/main/java/com/wails/app/WarpVpnService.java
+          grep -q 'androidSelfPackage = "org.sayeh.vpn"' androidbridge.go
+
+      - name: Build signed release APK
+        working-directory: upstream/gui/build/android
+        env:
+          VERSION_NAME: 0.9.0
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/SAYEH-VPN-0.9.0-Android.apk"
+
+      - name: Verify install package and signatures
+        run: |
+          unzip -t SAYEH-VPN-0.9.0-Android.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs SAYEH-VPN-0.9.0-Android.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging SAYEH-VPN-0.9.0-Android.apk | tee sayeh-badging.txt
+          grep -q "package: name='org.sayeh.vpn'" sayeh-badging.txt
+          grep -q "sdkVersion:'21'" sayeh-badging.txt
+          grep -q "targetSdkVersion:'35'" sayeh-badging.txt
+          grep -q "application-label:'SAYEH VPN'" sayeh-badging.txt
+          sha256sum SAYEH-VPN-0.9.0-Android.apk | tee SAYEH-VPN-0.9.0.sha256
+
+      - name: Upload verified APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SAYEH-VPN-Android
+          path: |
+            SAYEH-VPN-0.9.0-Android.apk
+            SAYEH-VPN-0.9.0.sha256
+            sayeh-badging.txt
+          if-no-files-found: error
+          retention-days: 14
