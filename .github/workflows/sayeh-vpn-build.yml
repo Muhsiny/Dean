@@ -3,7 +3,7 @@ name: Build SAYEH VPN Android
 on:
   push:
     branches:
-      - sayeh-vpn-stable-1.1.0
+      - sayeh-vpn-real-1.2.0
     paths:
       - 'sayeh-build/**'
       - '.github/workflows/sayeh-vpn-build.yml'
@@ -18,7 +18,7 @@ jobs:
     timeout-minutes: 45
     env:
       NDK_VERSION: 26.3.11579264
-      VERSION_NAME: 1.1.0
+      VERSION_NAME: 1.2.0
     steps:
       - name: Checkout build patch
         uses: actions/checkout@v4
@@ -30,6 +30,7 @@ jobs:
         run: |
           python3 sayeh-build/apply_patch.py upstream
           python3 sayeh-build/apply_stability_patch.py upstream
+          python3 sayeh-build/apply_real_patch.py upstream
           grep -q 'applicationId "org.sayeh.vpn"' upstream/gui/build/android/app/build.gradle
           grep -q 'SAYEH VPN' upstream/gui/build/android/app/src/main/res/values/strings.xml
           grep -q 'const androidSelfPackage = "org.sayeh.vpn"' upstream/gui/androidbridge.go
@@ -112,7 +113,7 @@ jobs:
           GOARCH: arm64
         run: |
           mkdir -p build/android/app/src/main/jniLibs/arm64-v8a
-          go build -buildmode=c-shared -overlay build/android/overlay.json -tags production,android,with_gvisor -trimpath -buildvcs=false -ldflags="-w -s -X main.version=1.1.0" -o build/android/app/src/main/jniLibs/arm64-v8a/libwails.so
+          go build -buildmode=c-shared -overlay build/android/overlay.json -tags production,android,with_gvisor -trimpath -buildvcs=false -ldflags="-w -s -X main.version=1.2.0" -o build/android/app/src/main/jniLibs/arm64-v8a/libwails.so
 
       - name: Compile native engine x86_64
         working-directory: upstream/gui
@@ -123,7 +124,7 @@ jobs:
           GOARCH: amd64
         run: |
           mkdir -p build/android/app/src/main/jniLibs/x86_64
-          go build -buildmode=c-shared -overlay build/android/overlay.json -tags production,android,with_gvisor -trimpath -buildvcs=false -ldflags="-w -s -X main.version=1.1.0" -o build/android/app/src/main/jniLibs/x86_64/libwails.so
+          go build -buildmode=c-shared -overlay build/android/overlay.json -tags production,android,with_gvisor -trimpath -buildvcs=false -ldflags="-w -s -X main.version=1.2.0" -o build/android/app/src/main/jniLibs/x86_64/libwails.so
 
       - name: JNI contract checks
         working-directory: upstream/gui
@@ -138,17 +139,17 @@ jobs:
       - name: Build signed release APK
         working-directory: upstream/gui/build/android
         env:
-          VERSION_NAME: 1.1.0
+          VERSION_NAME: 1.2.0
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
-          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/SAYEH-VPN-1.1.0-Android.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/SAYEH-VPN-1.2.0-Android.apk"
 
       - name: Verify install package and signatures
         run: |
-          unzip -t SAYEH-VPN-1.1.0-Android.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs SAYEH-VPN-1.1.0-Android.apk
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging SAYEH-VPN-1.1.0-Android.apk > sayeh-badging.txt 2>&1
+          unzip -t SAYEH-VPN-1.2.0-Android.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs SAYEH-VPN-1.2.0-Android.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging SAYEH-VPN-1.2.0-Android.apk > sayeh-badging.txt 2>&1
           cat sayeh-badging.txt
           python3 - <<'PY'
           from pathlib import Path
@@ -166,15 +167,15 @@ jobs:
               raise SystemExit("badging verification failed: "+repr(missing))
           print("APK badging verification passed")
           PY
-          sha256sum SAYEH-VPN-1.1.0-Android.apk | tee SAYEH-VPN-1.1.0.sha256
+          sha256sum SAYEH-VPN-1.2.0-Android.apk | tee SAYEH-VPN-1.2.0.sha256
 
       - name: Upload verified APK
         uses: actions/upload-artifact@v4
         with:
           name: SAYEH-VPN-Android
           path: |
-            SAYEH-VPN-1.1.0-Android.apk
-            SAYEH-VPN-1.1.0.sha256
+            SAYEH-VPN-1.2.0-Android.apk
+            SAYEH-VPN-1.2.0.sha256
             sayeh-badging.txt
           if-no-files-found: error
           retention-days: 14
