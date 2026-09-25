@@ -314,20 +314,6 @@ def patch_androidvpn(s):
     return s
 edit('androidvpn/androidvpn.go', patch_androidvpn)
 
-def patch_frontproxy(s):
-    s=s.replace('const DefaultFrontProxyToken = "482857715"',
-                'const DefaultFrontProxyToken = ""')
-    s=re.sub(r'''return FrontProxyConfig\{\n\t\tEnabled:\s+false,\n\t\tServer:\s+"cloudnproxy\.baidu\.com:443",\n\t\tConnectHost:\s+"sptest\.baidu\.com",\n\t\tToken:\s+DefaultFrontProxyToken,\n\t\tUserAgent:\s+DefaultFrontProxyUserAgent,\n\t\}''',
-             '''return FrontProxyConfig{
-\t\tEnabled:     false,
-\t\tServer:      "",
-\t\tConnectHost: "",
-\t\tToken:       "",
-\t\tUserAgent:   "",
-\t}''',s)
-    return s
-edit('core/config_front_proxy.go', patch_frontproxy)
-
 # Make the safety baseline explicit.
 edit('core/config.go', lambda s: s.replace('TunnelConnections: 2,','TunnelConnections: 1,'))
 
