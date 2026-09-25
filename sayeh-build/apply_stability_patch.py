@@ -12,6 +12,20 @@ def edit(rel, fn):
     p.write_text(ns,encoding='utf-8')
     print('stability patched:',rel)
 
+def patch_manifest_stability(s):
+    s=s.replace('android:allowBackup="true"', 'android:allowBackup="false"')
+    if 'android.permission.FOREGROUND_SERVICE_SPECIAL_USE' not in s:
+        s=s.replace('<uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />',
+                    '<uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />\n'
+                    '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />')
+    s=s.replace('android:foregroundServiceType="dataSync" />',
+                'android:foregroundServiceType="dataSync|specialUse">\n'
+                '            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"\n'
+                '                android:value="SAYEH VPN encrypted tunnel runtime" />\n'
+                '        </service>')
+    return s
+edit('gui/build/android/app/src/main/AndroidManifest.xml', patch_manifest_stability)
+
 def patch_service(s):
     # Drop experimental radio forcing/pinning from 1.0 Turbo.
     s=s.replace('import android.net.wifi.WifiManager;\n','')
@@ -200,6 +214,24 @@ def patch_service(s):
     return s
 
 edit('gui/build/android/app/src/main/java/com/wails/app/WarpVpnService.java', patch_service)
+
+def patch_fgs_java(s):
+    old='''        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+        } else {
+            startForeground(NOTIFICATION_ID, n);
+        }'''
+    new='''        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+        } else {
+            startForeground(NOTIFICATION_ID, n);
+        }'''
+    return s.replace(old,new)
+edit('gui/build/android/app/src/main/java/com/wails/app/WarpVpnService.java', patch_fgs_java)
+edit('gui/build/android/app/src/main/java/com/wails/app/WailsForegroundService.java', patch_fgs_java)
+
 
 def patch_bridge(s):
     for imp in ['\t"io"\n','\t"net"\n','\t"net/http"\n','\t"syscall"\n']:
