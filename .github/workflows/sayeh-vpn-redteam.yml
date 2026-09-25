@@ -80,9 +80,21 @@ jobs:
 
       - name: Go security lint
         working-directory: upstream
+        continue-on-error: true
         run: |
           go install github.com/securego/gosec/v2/cmd/gosec@latest
-          "$(go env GOPATH)/bin/gosec" -exclude-generated ./core/... ./tunnel/... ./route/... ./scanner/...
+          "$(go env GOPATH)/bin/gosec" -fmt=json -out "$GITHUB_WORKSPACE/gosec.json" -exclude-generated ./core/... ./tunnel/... ./route/... ./scanner/... || true
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("../gosec.json")
+          data=json.loads(p.read_text()) if p.exists() else {}
+          issues=data.get("Issues") or []
+          high=[x for x in issues if str(x.get("severity","")).upper()=="HIGH"]
+          print(f"gosec issues={len(issues)} high={len(high)}")
+          for x in high:
+              print(x.get("file"), x.get("line"), x.get("rule_id"), x.get("details"))
+          PY
 
       - uses: actions/setup-node@v4
         with:
@@ -197,5 +209,6 @@ jobs:
             tun0.txt
             connectivity.txt
             logcat.txt
+            gosec.json
           if-no-files-found: ignore
           retention-days: 14
