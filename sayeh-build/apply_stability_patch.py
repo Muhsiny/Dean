@@ -357,4 +357,13 @@ def hide_front_proxy_ui(s):
     return s
 edit('gui/frontend/src/pages/SettingsPage.tsx', hide_front_proxy_ui)
 
+def cleanup_hidden_front_proxy_ui(s):
+    s=s.replace(
+        '  const { setEnabled: setFrontProxyEnabled, setFromConfig: setFrontProxyFromConfig } =\n    useFrontProxyContext();',
+        '  const { setFromConfig: setFrontProxyFromConfig } = useFrontProxyContext();'
+    )
+    return s
+edit('gui/frontend/src/pages/SettingsPage.tsx', cleanup_hidden_front_proxy_ui)
+
+
 print('SAYEH Stability 1.1 patch complete.')
