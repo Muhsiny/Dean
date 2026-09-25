@@ -143,10 +143,22 @@ jobs:
           unzip -t SAYEH-VPN-0.9.0-Android.apk
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs SAYEH-VPN-0.9.0-Android.apk
           "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging SAYEH-VPN-0.9.0-Android.apk | tee sayeh-badging.txt
-          grep -q "package: name='org.sayeh.vpn'" sayeh-badging.txt
-          grep -q "sdkVersion:'21'" sayeh-badging.txt
-          grep -q "targetSdkVersion:'35'" sayeh-badging.txt
-          grep -q "application-label:'SAYEH VPN'" sayeh-badging.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path("sayeh-badging.txt").read_text()
+          required=[
+              "package: name='org.sayeh.vpn'",
+              "sdkVersion:'21'",
+              "targetSdkVersion:'35'",
+              "application-label:'SAYEH VPN'",
+              "launchable-activity: name='com.wails.app.MainActivity'",
+              "native-code: 'arm64-v8a' 'x86_64'",
+          ]
+          missing=[x for x in required if x not in s]
+          if missing:
+              raise SystemExit("badging verification failed: "+repr(missing))
+          print("APK badging verification passed")
+          PY
           sha256sum SAYEH-VPN-0.9.0-Android.apk | tee SAYEH-VPN-0.9.0.sha256
 
       - name: Upload verified APK
