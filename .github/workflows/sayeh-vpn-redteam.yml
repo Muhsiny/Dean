@@ -184,7 +184,7 @@ jobs:
           profile: pixel_6
           disable-animations: true
           script: |
-            set -euxo pipefail
+            set -eu
             adb install -r "$GITHUB_WORKSPACE/SAYEH-redteam-debug.apk"
             adb logcat -c
             adb shell am start -W -n org.sayeh.vpn/com.wails.app.MainActivity
