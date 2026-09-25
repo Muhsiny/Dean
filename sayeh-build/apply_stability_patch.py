@@ -77,14 +77,31 @@ def patch_service(s):
         try {
             ConnectivityManager cm =
                     (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-            if (cm == null) return null;
-            Network current = cm.getActiveNetwork();
-            if (current == null) return null;
-            NetworkCapabilities caps = cm.getNetworkCapabilities(current);
-            if (caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)) {
-                return current;
+            if (cm == null) return sayehPhysicalNetwork;
+            Network best = null;
+            int bestScore = Integer.MIN_VALUE;
+            for (Network n : cm.getAllNetworks()) {
+                NetworkCapabilities caps = cm.getNetworkCapabilities(n);
+                if (caps == null ||
+                        !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) ||
+                        !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)) {
+                    continue;
+                }
+                int score = 0;
+                if (Build.VERSION.SDK_INT >= 23 &&
+                        caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
+                    score += 100;
+                }
+                if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) score += 30;
+                else if (caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) score += 20;
+                else if (caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) score += 10;
+                if (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)) score += 2;
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = n;
+                }
             }
-            return sayehPhysicalNetwork;
+            return best != null ? best : sayehPhysicalNetwork;
         } catch (Throwable t) {
             return sayehPhysicalNetwork;
         }
@@ -113,18 +130,23 @@ def patch_service(s):
             sayehNetworkCallback = new ConnectivityManager.NetworkCallback() {
                 @Override
                 public void onAvailable(Network network) {
-                    final Network n = network;
-                    sayehHandler.post(() -> onSayehPhysicalNetworkAvailable(n));
+                    sayehHandler.post(() -> refreshSayehPhysicalNetwork(false));
                 }
 
                 @Override
                 public void onLost(Network network) {
-                    final Network n = network;
+                    final Network lost = network;
                     sayehHandler.post(() -> {
-                        if (n != null && n.equals(sayehPhysicalNetwork)) {
+                        if (lost != null && lost.equals(sayehPhysicalNetwork)) {
                             sayehPhysicalNetworkWasLost = true;
                         }
+                        refreshSayehPhysicalNetwork(true);
                     });
+                }
+
+                @Override
+                public void onCapabilitiesChanged(Network network, NetworkCapabilities caps) {
+                    sayehHandler.post(() -> refreshSayehPhysicalNetwork(false));
                 }
             };
             sayehConnectivityManager.registerNetworkCallback(request, sayehNetworkCallback);
@@ -146,12 +168,16 @@ def patch_service(s):
         sayehHandler.removeCallbacksAndMessages(null);
     }
 
-    private void onSayehPhysicalNetworkAvailable(Network network) {
-        if (network == null) return;
+    private void refreshSayehPhysicalNetwork(boolean fromLoss) {
+        Network chosen = activePhysicalNetwork();
         Network old = sayehPhysicalNetwork;
+        if (chosen == null) {
+            if (fromLoss) sayehPhysicalNetworkWasLost = true;
+            return;
+        }
         boolean changed = sayehPhysicalNetworkWasLost ||
-                (old != null && !old.equals(network));
-        sayehPhysicalNetwork = network;
+                (old != null && !old.equals(chosen));
+        sayehPhysicalNetwork = chosen;
         sayehPhysicalNetworkWasLost = false;
 
         if (!changed || !nativeRunning || vpnPfd == null) return;
