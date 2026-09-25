@@ -1,0 +1,197 @@
+name: Red Team SAYEH VPN Android
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - sayeh-vpn-stable-1.1.0
+    paths:
+      - 'sayeh-build/**'
+      - '.github/workflows/sayeh-vpn-redteam.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      NDK_VERSION: 26.3.11579264
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone exact engine
+        run: git clone --depth 1 --branch v0.6.6 https://github.com/callacat/warp-go.git upstream
+
+      - name: Apply SAYEH patches
+        run: |
+          python3 sayeh-build/apply_patch.py upstream
+          python3 sayeh-build/apply_stability_patch.py upstream
+
+      - name: Root-cause invariants
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          svc=Path("upstream/gui/build/android/app/src/main/java/com/wails/app/WarpVpnService.java").read_text()
+          man=Path("upstream/gui/build/android/app/src/main/AndroidManifest.xml").read_text()
+          bridge=Path("upstream/gui/androidbridge.go").read_text()
+          cfg=Path("upstream/core/config.go").read_text()
+          bad=[]
+          checks=[
+            ("stale network pin", "setUnderlyingNetworks(" not in svc),
+            ("experimental Wi-Fi lock", "WIFI_MODE_FULL_HIGH_PERF" not in svc),
+            ("backup disabled", 'android:allowBackup="false"' in man),
+            ("full TUN IPv4", 'addRoute("0.0.0.0", 0)' in svc),
+            ("full TUN IPv6", 'addRoute("::", 0)' in svc),
+            ("MTU 1400", "builder.setMtu(1400)" in svc),
+            ("socket protect contract", "protectSocket(int fd)" in svc),
+            ("two MASQUE sessions", "TunnelConnections: 2" in cfg),
+            ("handoff monitor", "registerSayehNetworkMonitor" in svc),
+            ("Android self package", 'androidSelfPackage = "org.sayeh.vpn"' in bridge),
+          ]
+          for name,ok in checks:
+            print(("PASS " if ok else "FAIL ")+name)
+            if not ok: bad.append(name)
+          if bad: raise SystemExit("invariant failures: "+repr(bad))
+          PY
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.x'
+          check-latest: true
+          cache: false
+
+      - name: Race and regression tests
+        working-directory: upstream
+        run: |
+          go test -race ./core ./tunnel ./route
+          go test ./androidvpn/... ./scanner/...
+
+      - name: Go vulnerability scan
+        working-directory: upstream
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          "$(go env GOPATH)/bin/govulncheck" ./core/... ./tunnel/... ./route/... ./scanner/...
+
+      - name: Go security lint
+        working-directory: upstream
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          "$(go env GOPATH)/bin/gosec" -exclude-generated ./core/... ./tunnel/... ./route/... ./scanner/...
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Frontend dependency audit
+        working-directory: upstream/gui/frontend
+        run: |
+          npm ci
+          npm audit --omit=dev --audit-level=high
+          npm run build
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Android SDK + NDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;${NDK_VERSION}"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+
+      - name: Wails Android overlay
+        working-directory: upstream/gui
+        run: |
+          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha2.119
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          go mod tidy
+          wails3 android overlay:gen -out build/android/overlay.json -config build/config.yml
+          wails3 generate bindings -ts -f '-tags android' -clean=true
+
+      - name: Compile x86_64 native engine for black-box emulator
+        working-directory: upstream/gui
+        env:
+          CC: ${{ env.ANDROID_NDK_HOME }}/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android21-clang
+          CGO_ENABLED: '1'
+          GOOS: android
+          GOARCH: amd64
+        run: |
+          mkdir -p build/android/app/src/main/jniLibs/x86_64
+          go build -buildmode=c-shared -overlay build/android/overlay.json -tags production,android,with_gvisor -trimpath -buildvcs=false -ldflags="-w -s -X main.version=1.1.0-redteam" -o build/android/app/src/main/jniLibs/x86_64/libwails.so
+
+      - name: Android lint and debug APK
+        working-directory: upstream/gui/build/android
+        run: |
+          chmod +x gradlew
+          ./gradlew lintDebug assembleDebug --no-daemon
+          cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/SAYEH-redteam-debug.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$GITHUB_WORKSPACE/SAYEH-redteam-debug.apk" | tee "$GITHUB_WORKSPACE/redteam-badging.txt"
+          unzip -t "$GITHUB_WORKSPACE/SAYEH-redteam-debug.apk"
+
+      - name: Generate live WARP registration for emulator
+        working-directory: upstream
+        run: |
+          go build -trimpath -o "$GITHUB_WORKSPACE/warp-redteam" .
+          mkdir -p "$GITHUB_WORKSPACE/e2e-reg"
+          cd "$GITHUB_WORKSPACE/e2e-reg"
+          "$GITHUB_WORKSPACE/warp-redteam" -reg
+          find . -type f -maxdepth 4 -print
+          REG="$(find . -name reg.json -type f | head -1)"
+          test -n "$REG"
+          cp "$REG" "$GITHUB_WORKSPACE/redteam-reg.json"
+
+      - name: Emulator black-box boot / VPN service / crash test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            set -euxo pipefail
+            adb install -r "$GITHUB_WORKSPACE/SAYEH-redteam-debug.apk"
+            adb logcat -c
+            adb shell am start -W -n org.sayeh.vpn/com.wails.app.MainActivity
+            sleep 8
+            adb exec-out run-as org.sayeh.vpn sh -c 'cat > files/reg.json' < "$GITHUB_WORKSPACE/redteam-reg.json"
+            adb shell appops set org.sayeh.vpn ACTIVATE_VPN allow || true
+            adb root || true
+            adb shell am start-foreground-service -n org.sayeh.vpn/com.wails.app.WarpVpnService || true
+            sleep 35
+            adb shell pidof org.sayeh.vpn | tee "$GITHUB_WORKSPACE/pid.txt"
+            adb shell ip addr show tun0 | tee "$GITHUB_WORKSPACE/tun0.txt" || true
+            adb shell dumpsys connectivity > "$GITHUB_WORKSPACE/connectivity.txt"
+            adb logcat -d > "$GITHUB_WORKSPACE/logcat.txt"
+            test -s "$GITHUB_WORKSPACE/pid.txt"
+            grep -q "VPN accepted async start" "$GITHUB_WORKSPACE/logcat.txt"
+            grep -q "tun0" "$GITHUB_WORKSPACE/tun0.txt"
+            if grep -E "FATAL EXCEPTION|UnsatisfiedLinkError|JNI DETECTED ERROR|SIGSEGV|SIGABRT|ANR in org.sayeh.vpn" "$GITHUB_WORKSPACE/logcat.txt"; then
+              echo "Crash/ANR signature found"
+              exit 1
+            fi
+
+      - name: Upload red-team evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SAYEH-redteam-evidence
+          path: |
+            redteam-badging.txt
+            pid.txt
+            tun0.txt
+            connectivity.txt
+            logcat.txt
+          if-no-files-found: ignore
+          retention-days: 14
