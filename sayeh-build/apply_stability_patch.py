@@ -198,11 +198,10 @@ def patch_service(s):
             sayehHandler.postDelayed(() -> {
                 try {
                     Intent restart = new Intent(this, WarpVpnService.class);
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        startForegroundService(restart);
-                    } else {
-                        startService(restart);
-                    }
+                    // The service is intentionally still foreground here; this
+                    // only re-enters onStartCommand and avoids Android 12+
+                    // background-FGS launch restrictions during network handoff.
+                    startService(restart);
                 } catch (Throwable t) {
                     Log.e(TAG, "SAYEH Stability: handoff restart failed", t);
                 }
