@@ -399,4 +399,24 @@ def harden_pool_index(s):
     return s
 edit('core/pool.go', harden_pool_index)
 
+
+# Security hardening pass (regex-based so it remains stable across upstream spacing).
+def harden_tls_v2(s):
+    if 'SessionTicketsDisabled:' not in s:
+        s=s.replace(
+            'InsecureSkipVerify:    true,',
+            'InsecureSkipVerify:    true, // #nosec G402 -- mandatory Cloudflare registration key pin\\n\\t\\tSessionTicketsDisabled: true,'
+        )
+    if 'if verifyEdge == nil {' not in s:
+        pat=r'(verifyEdge, err := regData\\.PeerPublicKeyVerifier\\(\\)\\n\\tif err != nil \\{\\n\\t\\treturn nil, fmt\\.Errorf\\("边缘公钥固定初始化失败：%w", err\\)\\n\\t\\})'
+        s=re.sub(pat, r'\\1\\n\\tif verifyEdge == nil {\\n\\t\\treturn nil, fmt.Errorf("注册信息缺少 WARP 边缘公钥，请重新注册")\\n\\t}', s, count=1)
+    return s
+edit('core/edge.go', harden_tls_v2)
+edit('core/core.go', harden_tls_v2)
+
+def harden_pool_v2(s):
+    s=s.replace('next  atomic.Uint64', 'next  atomic.Uint32')
+    return s
+edit('core/pool.go', harden_pool_v2)
+
 print('SAYEH Stability 1.1 patch complete.')
