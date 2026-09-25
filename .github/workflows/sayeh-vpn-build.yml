@@ -142,7 +142,8 @@ jobs:
         run: |
           unzip -t SAYEH-VPN-0.9.0-Android.apk
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs SAYEH-VPN-0.9.0-Android.apk
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging SAYEH-VPN-0.9.0-Android.apk | tee sayeh-badging.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging SAYEH-VPN-0.9.0-Android.apk > sayeh-badging.txt 2>&1
+          cat sayeh-badging.txt
           python3 - <<'PY'
           from pathlib import Path
           s=Path("sayeh-badging.txt").read_text()
