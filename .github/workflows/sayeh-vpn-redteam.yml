@@ -179,9 +179,9 @@ jobs:
       - name: Emulator black-box boot / VPN service / crash test
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: 30
           arch: x86_64
-          profile: pixel_6
+          profile: pixel_4
           disable-animations: true
           script: |
             set -eu
