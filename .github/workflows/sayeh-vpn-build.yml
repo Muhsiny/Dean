@@ -149,7 +149,7 @@ jobs:
           s=Path("sayeh-badging.txt").read_text()
           required=[
               "package: name='org.sayeh.vpn'",
-              "sdkVersion:'21'",
+              "minSdkVersion:'21'",
               "targetSdkVersion:'35'",
               "application-label:'SAYEH VPN'",
               "launchable-activity: name='com.wails.app.MainActivity'",
