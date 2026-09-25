@@ -318,4 +318,17 @@ edit('androidvpn/androidvpn.go', patch_androidvpn)
 # direct-link speed heuristic was not a valid proxy for tunnel capacity.
 edit('core/config.go', lambda s: s.replace('TunnelConnections: 1,','TunnelConnections: 2,'))
 
+
+# Hide the undocumented shared third-party front-proxy control from the SAYEH UI.
+# The upstream core remains untouched for regression compatibility, but users
+# cannot accidentally route their traffic through it.
+def hide_front_proxy_ui(s):
+    start=s.find('            {/* 百度中转保命通道（front proxy） */}')
+    if start >= 0:
+        end=s.find('          </div>\n        ) : (', start)
+        if end > start:
+            s=s[:start]+s[end:]
+    return s
+edit('gui/frontend/src/pages/SettingsPage.tsx', hide_front_proxy_ui)
+
 print('SAYEH Stability 1.1 patch complete.')
