@@ -54,8 +54,8 @@ jobs:
       - name: Install Android platform, build-tools and NDK
         run: |
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;\${NDK_VERSION}"
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/\${NDK_VERSION}" >> "$GITHUB_ENV"
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;${NDK_VERSION}"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
 
       - name: Setup Go 1.26
         uses: actions/setup-go@v6
@@ -100,7 +100,7 @@ jobs:
       - name: Compile native engine arm64
         working-directory: upstream/gui
         env:
-          CC: \${{ env.ANDROID_NDK_HOME }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang
+          CC: ${{ env.ANDROID_NDK_HOME }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang
           CGO_ENABLED: '1'
           GOOS: android
           GOARCH: arm64
@@ -111,7 +111,7 @@ jobs:
       - name: Compile native engine x86_64
         working-directory: upstream/gui
         env:
-          CC: \${{ env.ANDROID_NDK_HOME }}/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android21-clang
+          CC: ${{ env.ANDROID_NDK_HOME }}/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android21-clang
           CGO_ENABLED: '1'
           GOOS: android
           GOARCH: amd64
