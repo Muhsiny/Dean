@@ -192,4 +192,290 @@ for p in (root/'gui/frontend/src').rglob('*.tsx'):
     if found:
         print('WARN visible CJK may remain in',p,found[:8])
 
+
+
+# --- SAYEH Turbo: real transport/performance engineering ---
+
+# 1) Android Wi-Fi high-performance radio mode + adaptive physical MTU +
+#    explicit underlying network. This cannot increase ISP capacity, but it
+#    removes client-side Wi-Fi power-save throttling and avoids MTU black holes.
+def patch_manifest_turbo(s):
+    needle='    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />'
+    if 'android.permission.WAKE_LOCK' not in s:
+        s=s.replace(needle, needle+'\n    <uses-permission android:name="android.permission.WAKE_LOCK" />')
+    return s
+edit('gui/build/android/app/src/main/AndroidManifest.xml', patch_manifest_turbo)
+
+def patch_vpn_service_turbo(s):
+    if 'android.net.NetworkCapabilities' not in s:
+        s=s.replace('import android.net.Network;\n', 'import android.net.Network;\nimport android.net.NetworkCapabilities;\nimport android.net.wifi.WifiManager;\n')
+    if 'private WifiManager.WifiLock sayehWifiLock;' not in s:
+        s=s.replace('    private volatile boolean nativeRunning = false;\n',
+                    '    private volatile boolean nativeRunning = false;\n'
+                    '    private WifiManager.WifiLock sayehWifiLock;\n')
+    # Capture physical network once, before the VPN becomes active.
+    s=s.replace('        String physicalDns = collectPhysicalDns();\n\n        VpnService.Builder builder = new VpnService.Builder();\n        builder.setSession("warp-go");',
+                '        String physicalDns = collectPhysicalDns();\n'
+                '        Network physicalNetwork = activePhysicalNetwork();\n'
+                '        int sayehTunMtu = chooseSayehTunMtu(physicalNetwork);\n'
+                '        acquireSayehWifiPerformanceLock(physicalNetwork);\n\n'
+                '        VpnService.Builder builder = new VpnService.Builder();\n'
+                '        builder.setSession("SAYEH VPN");')
+    s=s.replace('        builder.setMtu(1400);',
+                '        builder.setMtu(sayehTunMtu);\n'
+                '        if (Build.VERSION.SDK_INT >= 22 && physicalNetwork != null) {\n'
+                '            try {\n'
+                '                builder.setUnderlyingNetworks(new Network[]{physicalNetwork});\n'
+                '                Log.i(TAG, "SAYEH Turbo: underlying physical network pinned");\n'
+                '            } catch (Throwable t) {\n'
+                '                Log.w(TAG, "SAYEH Turbo: setUnderlyingNetworks failed", t);\n'
+                '            }\n'
+                '        }')
+    # Release the radio lock on every teardown path.
+    s=s.replace('    private void closeNative() {\n        ParcelFileDescriptor pfd = vpnPfd;',
+                '    private void closeNative() {\n'
+                '        releaseSayehWifiPerformanceLock();\n'
+                '        ParcelFileDescriptor pfd = vpnPfd;')
+    if 'private Network activePhysicalNetwork()' not in s:
+        marker='    private String collectPhysicalDns() {'
+        helper=r'''    private Network activePhysicalNetwork() {
+        try {
+            ConnectivityManager cm =
+                    (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            return cm != null ? cm.getActiveNetwork() : null;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * Adaptive TUN MTU: reserve headroom for QUIC/UDP/IP overhead and never
+     * exceed the proven-safe 1400 used by the tunnel core.
+     */
+    private int chooseSayehTunMtu(Network network) {
+        int physicalMtu = 1500;
+        try {
+            ConnectivityManager cm =
+                    (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm != null && network != null) {
+                LinkProperties lp = cm.getLinkProperties(network);
+                if (lp != null && lp.getMtu() > 0) physicalMtu = lp.getMtu();
+            }
+        } catch (Throwable ignored) {}
+        int tunMtu = Math.max(1280, Math.min(1400, physicalMtu - 80));
+        Log.i(TAG, "SAYEH Turbo: physical MTU=" + physicalMtu + ", TUN MTU=" + tunMtu);
+        return tunMtu;
+    }
+
+    /**
+     * Hold Android's high-performance Wi-Fi mode while the VPN is active.
+     * This disables client-side Wi-Fi power saving that can add latency and
+     * cap sustained throughput on some devices. It does not alter router QoS.
+     */
+    private void acquireSayehWifiPerformanceLock(Network network) {
+        releaseSayehWifiPerformanceLock();
+        try {
+            ConnectivityManager cm =
+                    (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            NetworkCapabilities caps =
+                    cm != null && network != null ? cm.getNetworkCapabilities(network) : null;
+            if (caps == null || !caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return;
+            WifiManager wm =
+                    (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+            if (wm == null) return;
+            WifiManager.WifiLock lock =
+                    wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "SAYEH-Turbo");
+            lock.setReferenceCounted(false);
+            lock.acquire();
+            sayehWifiLock = lock;
+            Log.i(TAG, "SAYEH Turbo: high-performance Wi-Fi lock acquired");
+        } catch (Throwable t) {
+            Log.w(TAG, "SAYEH Turbo: Wi-Fi performance lock unavailable", t);
+        }
+    }
+
+    private void releaseSayehWifiPerformanceLock() {
+        WifiManager.WifiLock lock = sayehWifiLock;
+        sayehWifiLock = null;
+        if (lock != null) {
+            try {
+                if (lock.isHeld()) lock.release();
+            } catch (Throwable ignored) {}
+        }
+    }
+
+'''
+        s=s.replace(marker, helper+marker)
+    return s
+edit('gui/build/android/app/src/main/java/com/wails/app/WarpVpnService.java',
+     patch_vpn_service_turbo)
+
+# 2) Adaptive connection pool based on an actual protected direct throughput
+#    probe. It runs after TUN establish, but the probe socket is protected from
+#    the VPN, so it measures the real uplink and chooses 1/2/3 MASQUE sessions.
+def patch_androidbridge_turbo(s):
+    s=s.replace('import (\n\t"context"\n\t"encoding/json"',
+                'import (\n\t"context"\n\t"encoding/json"\n\t"io"\n\t"net"\n\t"net/http"\n\t"syscall"')
+    hook='\tlog.Printf("正在连接 WARP 边缘 %v ...", edgeAddrs)\n\tkernel, err := core.NewKernelContext(ctx, built.cfg, built.regData, edgeAddrs, tlsConfig)'
+    repl='\tbuilt.cfg.TunnelConnections = sayehAutoTunnelConnections(ctx)\n' \
+         '\tlog.Printf("SAYEH Turbo：自动选择 %d 条 MASQUE 连接", built.cfg.TunnelConnections)\n' \
+         '\tlog.Printf("正在连接 WARP 边缘 %v ...", edgeAddrs)\n' \
+         '\tkernel, err := core.NewKernelContext(ctx, built.cfg, built.regData, edgeAddrs, tlsConfig)'
+    s=s.replace(hook,repl)
+    if 'func sayehAutoTunnelConnections(' not in s:
+        marker='// startVpnKernel 在后台 goroutine装配并启动 Kernel'
+        # Source comment contains a space after goroutine in some versions; use a stable marker.
+        marker='// startVpnKernel 在后台 goroutine'
+        idx=s.find(marker)
+        if idx<0:
+            raise RuntimeError('startVpnKernel marker not found')
+        helper=r'''// sayehAutoTunnelConnections measures the real physical uplink using a
+// protected socket (bypassing the just-established TUN) and chooses a conservative
+// MASQUE pool size. One connection wins on slow links; extra sessions are only
+// opened when measured bandwidth can amortize their overhead.
+func sayehAutoTunnelConnections(parent context.Context) int {
+    const probeBytes = int64(384 * 1024)
+    ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+    defer cancel()
+
+    d := &net.Dialer{
+        Timeout: 2500 * time.Millisecond,
+        Control: func(network, address string, c syscall.RawConn) error {
+            var protectErr error
+            if err := c.Control(func(fd uintptr) {
+                protectErr = androidProtectSocket(int(fd))
+            }); err != nil {
+                return err
+            }
+            return protectErr
+        },
+    }
+    tr := &http.Transport{
+        Proxy:               nil,
+        DialContext:         d.DialContext,
+        ForceAttemptHTTP2:   true,
+        TLSHandshakeTimeout: 2500 * time.Millisecond,
+        DisableKeepAlives:   true,
+    }
+    defer tr.CloseIdleConnections()
+
+    req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+        "https://speed.cloudflare.com/__down?bytes=393216", nil)
+    if err != nil {
+        return 1
+    }
+    start := time.Now()
+    resp, err := tr.RoundTrip(req)
+    if err != nil {
+        log.Printf("SAYEH Turbo：سرعت‌سنج uplink در دسترس نیست، حالت 1 تونل")
+        return 1
+    }
+    defer resp.Body.Close()
+    n, err := io.CopyN(io.Discard, resp.Body, probeBytes)
+    elapsed := time.Since(start)
+    if err != nil && n < 128*1024 {
+        return 1
+    }
+    if elapsed <= 0 {
+        return 1
+    }
+    mbps := float64(n*8) / elapsed.Seconds() / 1_000_000
+    chosen := 1
+    if mbps >= 18 {
+        chosen = 2
+    }
+    if mbps >= 80 {
+        chosen = 3
+    }
+    log.Printf("SAYEH Turbo：سرعت مستقیم %.2f Mbps → %d تونل موازی", mbps, chosen)
+    return chosen
+}
+
+'''
+        s=s[:idx]+helper+s[idx:]
+    return s
+edit('gui/androidbridge.go', patch_androidbridge_turbo)
+
+# 3) Larger QUIC flow-control windows for high-BDP links (satellite / fast Wi-Fi),
+#    pre-warm the multiplexed DoH carrier, and enlarge UDP socket buffers.
+def patch_client_conn_turbo(s):
+    s=s.replace('InitialConnectionReceiveWindow: 10_000_000,\n\t\tMaxConnectionReceiveWindow:     10_000_000,\n\t\tInitialStreamReceiveWindow:     1_000_000,\n\t\tMaxStreamReceiveWindow:         1_000_000,',
+                'InitialConnectionReceiveWindow: 16_000_000,\n'
+                '\t\tMaxConnectionReceiveWindow:     32_000_000,\n'
+                '\t\tInitialStreamReceiveWindow:     2_000_000,\n'
+                '\t\tMaxStreamReceiveWindow:         8_000_000,')
+    s=s.replace('\t\t\tc.cur = bundle\n\t\t\tgo c.egressProbeLoop()\n\t\t\treturn c, nil',
+                '\t\t\tc.cur = bundle\n'
+                '\t\t\tgo c.egressProbeLoop()\n'
+                '\t\t\tgo c.sayehPrewarmDoH()\n'
+                '\t\t\treturn c, nil')
+    s=s.replace('\tudpConn, err := net.ListenUDP(listenFamily, listenAddr)\n\tif err != nil {\n\t\treturn nil, fmt.Errorf("监听 UDP 失败：%w", err)\n\t}',
+                '\tudpConn, err := net.ListenUDP(listenFamily, listenAddr)\n'
+                '\tif err != nil {\n'
+                '\t\treturn nil, fmt.Errorf("监听 UDP 失败：%w", err)\n'
+                '\t}\n'
+                '\t// SAYEH Turbo: absorb bursts on high-bandwidth/high-RTT links. The OS may\n'
+                '\t// clamp these values; failure is non-fatal and QUIC continues normally.\n'
+                '\t_ = udpConn.SetReadBuffer(4 << 20)\n'
+                '\t_ = udpConn.SetWriteBuffer(4 << 20)')
+    if 'func (c *MasqueClient) sayehPrewarmDoH()' not in s:
+        marker='func (c *MasqueClient) dialAddr(ctx context.Context, edgeAddr string, quiet bool)'
+        helper=r'''// sayehPrewarmDoH pays the DoH CONNECT+TLS+H2 setup cost immediately after
+// the MASQUE session becomes healthy, so the first user page does not pay it.
+func (c *MasqueClient) sayehPrewarmDoH() {
+    ctx, cancel := context.WithTimeout(c.lifeCtx, 6*time.Second)
+    defer cancel()
+    if _, err := c.dohConnection(ctx); err != nil && c.lifeCtx.Err() == nil {
+        log.Printf("SAYEH Turbo：DoH پیش‌گرم نشد: %v", err)
+    }
+}
+
+'''
+        s=s.replace(marker,helper+marker)
+    return s
+edit('tunnel/client_conn.go', patch_client_conn_turbo)
+
+# 4) Reduce per-flow allocation pressure in the Android userspace TCP relay.
+def patch_androidvpn_turbo(s):
+    if 'var sayehRelayBufferPool' not in s:
+        marker='// Vpn 是 Android TUN 服务的运行实例。'
+        helper='''// SAYEH Turbo: shared relay buffers reduce GC pressure during parallel downloads.\nvar sayehRelayBufferPool = sync.Pool{New: func() any {\n\tb := make([]byte, 64*1024)\n\treturn &b\n}}\n\n'''
+        s=s.replace(marker,helper+marker)
+    s=s.replace('\t\t\tbuf := make([]byte, 32*1024)\n\t\t\tfor {',
+                '\t\t\tbp := sayehRelayBufferPool.Get().(*[]byte)\n'
+                '\t\t\tbuf := *bp\n'
+                '\t\t\tdefer sayehRelayBufferPool.Put(bp)\n'
+                '\t\t\tfor {')
+    return s
+edit('androidvpn/androidvpn.go', patch_androidvpn_turbo)
+
+# 5) Conservative single-session fallback is the baseline; Android Turbo can
+#    raise it only after a real protected throughput measurement.
+def patch_core_config_turbo(s):
+    s=s.replace('TunnelConnections: 2,', 'TunnelConnections: 1,')
+    return s
+edit('core/config.go', patch_core_config_turbo)
+
+# Add a real, non-interactive status card so users know what is automatic.
+def patch_settings_turbo(s):
+    anchor='<Card title="ظاهر">'
+    if anchor not in s:
+        anchor='<Card title="外观">'
+    card='''<Card title="SAYEH Turbo">
+        <div className="space-y-1.5 text-sm">
+          <p className="font-medium text-[#2F6BFF]">بهینه‌سازی هوشمند فعال است</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            تعداد تونل‌ها با سنجش واقعی سرعت لینک انتخاب می‌شود؛ Wi‑Fi در حالت کارایی بالا نگه داشته می‌شود و MTU به‌صورت تطبیقی تنظیم می‌گردد.
+          </p>
+        </div>
+      </Card>
+
+      '''
+    if anchor in s and 'بهینه‌سازی هوشمند فعال است' not in s:
+        s=s.replace(anchor,card+anchor,1)
+    return s
+edit('gui/frontend/src/pages/SettingsPage.tsx', patch_settings_turbo)
+
+print('SAYEH Turbo performance patch applied.')
+
 print('SAYEH VPN source patch complete; JNI namespace preserved.')
