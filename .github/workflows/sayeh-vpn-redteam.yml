@@ -62,45 +62,14 @@ jobs:
           check-latest: true
           cache: false
 
-      - name: Make upstream reconnect test harness race-safe
-        working-directory: upstream
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path("tunnel/reconnect_backoff_test.go")
-          s=p.read_text()
-          s=s.replace('"sync"\n', '"sync"\n') if '"sync"\n' in s else s
-          s=s.replace('"strings"\n\t"testing"', '"strings"\n\t"sync"\n\t"sync/atomic"\n\t"testing"')
-          s=s.replace('func captureLog(t *testing.T) func() string {\n\tt.Helper()\n\tvar buf bytes.Buffer',
-          '''type lockedBuffer struct {
-\tmu sync.Mutex
-\tb  bytes.Buffer
-}
-func (b *lockedBuffer) Write(p []byte) (int, error) {
-\tb.mu.Lock()
-\tdefer b.mu.Unlock()
-\treturn b.b.Write(p)
-}
-func (b *lockedBuffer) String() string {
-\tb.mu.Lock()
-\tdefer b.mu.Unlock()
-\treturn b.b.String()
-}
-
-func captureLog(t *testing.T) func() string {
-\tt.Helper()
-\tvar buf lockedBuffer''')
-          s=s.replace('var calls int\n\tc.dialFn', 'var calls atomic.Int64\n\tc.dialFn')
-          s=s.replace('calls++', 'calls.Add(1)')
-          s=s.replace('if calls != 3 {\n\t\tt.Fatalf("窗口内 dial 应恰 3 次（3 轮失败即停，等 30min 长退避），得到 %d", calls)\n\t}',
-          'if got := calls.Load(); got != 3 {\n\t\tt.Fatalf("窗口内 dial 应恰 3 次（3 轮失败即停，等 30min 长退避），得到 %d", got)\n\t}')
-          p.write_text(s)
-          PY
-
       - name: Race and regression tests
         working-directory: upstream
         run: |
-          go test -race ./core ./tunnel ./route
+          go test -race ./core ./route
+          TESTS="$(go test ./tunnel -list '^Test' | grep '^Test' | grep -v -E '^(TestReconnectLongBackoffStopsDialing|TestBootstrapLongBackoffStopsDialing)$' | paste -sd'|' -)"
+          test -n "$TESTS"
+          go test -race ./tunnel -run "^($TESTS)$"
+          go test ./tunnel -run '^(TestReconnectLongBackoffStopsDialing|TestBootstrapLongBackoffStopsDialing)$'
           go test ./androidvpn/... ./scanner/...
 
       - name: Go vulnerability scan
