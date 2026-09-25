@@ -214,6 +214,11 @@ edit('gui/androidbridge.go', patch_bridge)
 def patch_client(s):
     s=s.replace('egressProbeInterval = 20 * time.Second',
                 'egressProbeInterval = 10 * time.Second')
+    s=s.replace('probeEgressTarget  = "8.8.8.8:443"\n\tprobeEgressTimeout = 5 * time.Second',
+                'probeEgressTimeout = 4 * time.Second')
+    if 'var probeEgressTargets = []string{' not in s:
+        s=s.replace('const connectionIDLength = 20\n',
+                    'const connectionIDLength = 20\n\nvar probeEgressTargets = []string{"1.1.1.1:443", "8.8.8.8:443"}\n')
     s=s.replace('InitialConnectionReceiveWindow: 16_000_000,\n\t\tMaxConnectionReceiveWindow:     32_000_000,\n\t\tInitialStreamReceiveWindow:     2_000_000,\n\t\tMaxStreamReceiveWindow:         8_000_000,',
                 'InitialConnectionReceiveWindow: 10_000_000,\n'
                 '\t\tMaxConnectionReceiveWindow:     10_000_000,\n'
@@ -227,6 +232,42 @@ def patch_client(s):
 ''','')
     s=re.sub(r'// sayehPrewarmDoH pays.*?\nfunc \(c \*MasqueClient\) sayehPrewarmDoH\(\) \{.*?\n\}\n\n',
              '',s,flags=re.S)
+    pattern=r'func \(c \*MasqueClient\) probeInternationalEgress\(ctx context\.Context, bundle \*connBundle\) error \{.*?\n\}'
+    replacement=r'''func (c *MasqueClient) probeInternationalEgress(ctx context.Context, bundle *connBundle) error {
+	if bundle == nil || bundle.h3Client == nil {
+		return errors.New("international egress probe: bundle not ready")
+	}
+	var errs []string
+	for _, target := range probeEgressTargets {
+		probeCtx, cancel := context.WithTimeout(ctx, probeEgressTimeout)
+		req := &http.Request{
+			Method: "CONNECT",
+			Host:   target,
+			URL:    &url.URL{Scheme: "https", Host: target},
+			Header: make(http.Header),
+		}
+		req.Header.Set("Authorization", "Bearer "+c.token)
+		stream, err := bundle.h3Client.OpenRequestStream(probeCtx)
+		if err != nil {
+			cancel()
+			errs = append(errs, fmt.Sprintf("%s open: %v", target, err))
+			continue
+		}
+		resp, err := connectThroughEdge(stream, req, connectDeadline(probeCtx, probeEgressTimeout))
+		releaseStream(stream)
+		cancel()
+		if err == nil && resp.StatusCode == 200 {
+			return nil
+		}
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", target, err))
+		} else {
+			errs = append(errs, fmt.Sprintf("%s: status %d", target, resp.StatusCode))
+		}
+	}
+	return fmt.Errorf("international egress probes failed: %s", strings.Join(errs, "; "))
+}'''
+    s=re.sub(pattern,replacement,s,count=1,flags=re.S)
     return s
 edit('tunnel/client_conn.go', patch_client)
 
