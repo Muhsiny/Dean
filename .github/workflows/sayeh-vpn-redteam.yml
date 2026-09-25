@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - sayeh-vpn-stable-1.1.0
+      - sayeh-vpn-real-1.2.0
     paths:
       - 'sayeh-build/**'
       - '.github/workflows/sayeh-vpn-redteam.yml'
@@ -28,6 +28,7 @@ jobs:
         run: |
           python3 sayeh-build/apply_patch.py upstream
           python3 sayeh-build/apply_stability_patch.py upstream
+          python3 sayeh-build/apply_real_patch.py upstream
 
       - name: Root-cause invariants
         run: |
@@ -149,7 +150,7 @@ jobs:
           GOARCH: amd64
         run: |
           mkdir -p build/android/app/src/main/jniLibs/x86_64
-          go build -buildmode=c-shared -overlay build/android/overlay.json -tags production,android,with_gvisor -trimpath -buildvcs=false -ldflags="-w -s -X main.version=1.1.0-redteam" -o build/android/app/src/main/jniLibs/x86_64/libwails.so
+          go build -buildmode=c-shared -overlay build/android/overlay.json -tags production,android,with_gvisor -trimpath -buildvcs=false -ldflags="-w -s -X main.version=1.2.0-redteam" -o build/android/app/src/main/jniLibs/x86_64/libwails.so
 
       - name: Android lint and debug APK
         working-directory: upstream/gui/build/android
