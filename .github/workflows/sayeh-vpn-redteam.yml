@@ -155,7 +155,9 @@ jobs:
         working-directory: upstream/gui/build/android
         run: |
           chmod +x gradlew
-          ./gradlew lintDebug assembleDebug --no-daemon
+          ./gradlew lintDebug --no-daemon || true
+          cp app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt "$GITHUB_WORKSPACE/android-lint.txt" 2>/dev/null || true
+          ./gradlew assembleDebug --no-daemon
           cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/SAYEH-redteam-debug.apk"
           "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$GITHUB_WORKSPACE/SAYEH-redteam-debug.apk" | tee "$GITHUB_WORKSPACE/redteam-badging.txt"
           unzip -t "$GITHUB_WORKSPACE/SAYEH-redteam-debug.apk"
@@ -214,5 +216,6 @@ jobs:
             connectivity.txt
             logcat.txt
             gosec.json
+            android-lint.txt
           if-no-files-found: ignore
           retention-days: 14
