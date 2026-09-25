@@ -101,9 +101,9 @@ def patch_service(s):
                     best = n;
                 }
             }
-            return best != null ? best : sayehPhysicalNetwork;
+            return best;
         } catch (Throwable t) {
-            return sayehPhysicalNetwork;
+            return null;
         }
     }
 
