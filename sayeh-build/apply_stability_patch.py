@@ -416,6 +416,7 @@ edit('core/core.go', harden_tls_v2)
 
 def harden_pool_v2(s):
     s=s.replace('next  atomic.Uint64', 'next  atomic.Uint32')
+    s=s.replace('% uint64(n)', '% uint32(n)')
     return s
 edit('core/pool.go', harden_pool_v2)
 
