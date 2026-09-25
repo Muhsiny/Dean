@@ -365,4 +365,38 @@ def cleanup_hidden_front_proxy_ui(s):
 edit('gui/frontend/src/pages/SettingsPage.tsx', cleanup_hidden_front_proxy_ui)
 
 
+
+# Harden MASQUE TLS pinning and remove unsafe counter-to-int conversions.
+def harden_edge_tls(s):
+    s=s.replace(
+        'verifyEdge, err := regData.PeerPublicKeyVerifier()\\n\\tif err != nil {\\n\\t\\treturn nil, fmt.Errorf("边缘公钥固定初始化失败：%w", err)\\n\\t}',
+        'verifyEdge, err := regData.PeerPublicKeyVerifier()\\n\\tif err != nil {\\n\\t\\treturn nil, fmt.Errorf("边缘公钥固定初始化失败：%w", err)\\n\\t}\\n\\tif verifyEdge == nil {\\n\\t\\treturn nil, fmt.Errorf("注册信息缺少 WARP 边缘公钥，请重新注册")\\n\\t}'
+    )
+    s=s.replace(
+        'InsecureSkipVerify:    true,',
+        'InsecureSkipVerify:    true, // #nosec G402 -- Cloudflare WARP registration-time ECDSA public-key pin is mandatory below\\n\\t\\tSessionTicketsDisabled: true,'
+    )
+    return s
+edit('core/edge.go', harden_edge_tls)
+
+def harden_scan_tls(s):
+    needle='verifyEdge, err := regData.PeerPublicKeyVerifier()\\n\\tif err != nil {\\n\\t\\treturn nil, fmt.Errorf("边缘公钥固定初始化失败：%w", err)\\n\\t}'
+    repl=needle+'\\n\\tif verifyEdge == nil {\\n\\t\\treturn nil, fmt.Errorf("注册信息缺少 WARP 边缘公钥，请重新注册")\\n\\t}'
+    s=s.replace(needle,repl)
+    s=s.replace(
+        'InsecureSkipVerify:    true,',
+        'InsecureSkipVerify:    true, // #nosec G402 -- mandatory registration-time ECDSA pin replaces CA-chain verification\\n\\t\\tSessionTicketsDisabled: true,',
+        1
+    )
+    return s
+edit('core/core.go', harden_scan_tls)
+
+def harden_pool_index(s):
+    s=s.replace(
+        'idx := int(p.next.Add(1)-1) % n',
+        'idx := int((p.next.Add(1) - 1) % uint64(n))'
+    )
+    return s
+edit('core/pool.go', harden_pool_index)
+
 print('SAYEH Stability 1.1 patch complete.')
