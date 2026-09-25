@@ -314,7 +314,8 @@ def patch_androidvpn(s):
     return s
 edit('androidvpn/androidvpn.go', patch_androidvpn)
 
-# Make the safety baseline explicit.
-edit('core/config.go', lambda s: s.replace('TunnelConnections: 2,','TunnelConnections: 1,'))
+# Restore the upstream field-tested two-connection Android pool. The 1.0
+# direct-link speed heuristic was not a valid proxy for tunnel capacity.
+edit('core/config.go', lambda s: s.replace('TunnelConnections: 1,','TunnelConnections: 2,'))
 
 print('SAYEH Stability 1.1 patch complete.')
