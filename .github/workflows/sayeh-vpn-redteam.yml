@@ -168,9 +168,9 @@ jobs:
           go build -trimpath -o "$GITHUB_WORKSPACE/warp-redteam" .
           mkdir -p "$GITHUB_WORKSPACE/e2e-reg"
           cd "$GITHUB_WORKSPACE/e2e-reg"
-          "$GITHUB_WORKSPACE/warp-redteam" -reg
-          find . -type f -maxdepth 4 -print
-          REG="$(find . -name reg.json -type f | head -1)"
+          "$GITHUB_WORKSPACE/warp-redteam" -reg || true
+          find . -maxdepth 4 -type f -print
+          REG="$(find . -maxdepth 4 -name reg.json -type f | head -1)"
           test -n "$REG"
           cp "$REG" "$GITHUB_WORKSPACE/redteam-reg.json"
 
