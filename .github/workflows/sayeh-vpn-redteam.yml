@@ -195,9 +195,14 @@ jobs:
             adb exec-out run-as org.sayeh.vpn sh -c 'cat > files/reg.json' < "$GITHUB_WORKSPACE/redteam-reg.json"
             adb shell run-as org.sayeh.vpn sh -c 'test -s files/reg.json && ls -l files/reg.json'
 
-            # Pre-authorize VpnService for the emulator and start the real service.
+            # Pre-authorize VpnService, then launch MainActivity once so the
+            # Wails Android runtime publishes StoragePath + reverse-JNI bridges.
+            # The first-run connect flow can start the real service; the
+            # explicit service start below is only an idempotent fallback.
             adb shell appops set org.sayeh.vpn ACTIVATE_VPN allow || true
-            adb shell am start-foreground-service -n org.sayeh.vpn/com.wails.app.WarpVpnService
+            adb shell am start -W -n org.sayeh.vpn/com.wails.app.MainActivity
+            sleep 8
+            adb shell am start-foreground-service -n org.sayeh.vpn/com.wails.app.WarpVpnService || true
             sleep 40
 
             adb shell pidof org.sayeh.vpn | tee "$GITHUB_WORKSPACE/pid.txt"
