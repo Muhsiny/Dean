@@ -187,22 +187,38 @@ jobs:
             set -eu
             adb install -r "$GITHUB_WORKSPACE/SAYEH-redteam-debug.apk"
             adb logcat -c
-            adb shell am start -W -n org.sayeh.vpn/com.wails.app.MainActivity
-            sleep 8
+
+            # Seed the exact runtime registration file before starting the VPN.
+            # run-as starts in /data/user/0/<package>; the files/ directory may
+            # not exist yet on a fresh install, so create it explicitly.
+            adb shell run-as org.sayeh.vpn mkdir -p files
             adb exec-out run-as org.sayeh.vpn sh -c 'cat > files/reg.json' < "$GITHUB_WORKSPACE/redteam-reg.json"
+            adb shell run-as org.sayeh.vpn sh -c 'test -s files/reg.json && ls -l files/reg.json'
+
+            # Pre-authorize VpnService for the emulator and start the real service.
             adb shell appops set org.sayeh.vpn ACTIVATE_VPN allow || true
-            adb root || true
-            adb shell am start-foreground-service -n org.sayeh.vpn/com.wails.app.WarpVpnService || true
-            sleep 35
+            adb shell am start-foreground-service -n org.sayeh.vpn/com.wails.app.WarpVpnService
+            sleep 40
+
             adb shell pidof org.sayeh.vpn | tee "$GITHUB_WORKSPACE/pid.txt"
             adb shell ip addr show tun0 | tee "$GITHUB_WORKSPACE/tun0.txt" || true
             adb shell dumpsys connectivity > "$GITHUB_WORKSPACE/connectivity.txt"
             adb logcat -d > "$GITHUB_WORKSPACE/logcat.txt"
+
             test -s "$GITHUB_WORKSPACE/pid.txt"
+            grep -q "TUN established, handing fd=" "$GITHUB_WORKSPACE/logcat.txt"
             grep -q "VPN accepted async start" "$GITHUB_WORKSPACE/logcat.txt"
             grep -q "tun0" "$GITHUB_WORKSPACE/tun0.txt"
+            grep -q "mtu 1400" "$GITHUB_WORKSPACE/tun0.txt"
+
             if grep -E "FATAL EXCEPTION|UnsatisfiedLinkError|JNI DETECTED ERROR|SIGSEGV|SIGABRT|ANR in org.sayeh.vpn" "$GITHUB_WORKSPACE/logcat.txt"; then
               echo "Crash/ANR signature found"
+              exit 1
+            fi
+
+            # The app itself must not report a failed VPN establish/start.
+            if grep -E "establish\\(\\) failed|nativeStartVpn failed|kernel assembly failed" "$GITHUB_WORKSPACE/logcat.txt"; then
+              echo "VPN runtime failure signature found"
               exit 1
             fi
 
