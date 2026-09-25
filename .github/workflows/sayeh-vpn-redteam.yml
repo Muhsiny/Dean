@@ -167,12 +167,13 @@ jobs:
         run: |
           go build -trimpath -o "$GITHUB_WORKSPACE/warp-redteam" .
           mkdir -p "$GITHUB_WORKSPACE/e2e-reg"
-          cd "$GITHUB_WORKSPACE/e2e-reg"
-          "$GITHUB_WORKSPACE/warp-redteam" -reg || true
-          find . -maxdepth 4 -type f -print
-          REG="$(find . -maxdepth 4 -name reg.json -type f | head -1)"
-          test -n "$REG"
+          pushd "$GITHUB_WORKSPACE/e2e-reg"
+          "$GITHUB_WORKSPACE/warp-redteam" -reg
+          popd
+          REG="$GITHUB_WORKSPACE/e2e-reg/config/reg.json"
+          test -s "$REG"
           cp "$REG" "$GITHUB_WORKSPACE/redteam-reg.json"
+          python3 -c 'import json,pathlib; d=json.loads(pathlib.Path("redteam-reg.json").read_text()); req=["id","token","private_key","peer_public_key","endpoint_v4","endpoint_ports"]; miss=[k for k in req if not d.get(k)]; print("registration endpoint",d.get("endpoint_v4"),d.get("endpoint_ports")); (_ for _ in ()).throw(SystemExit("registration missing fields: "+repr(miss))) if miss else None'
 
       - name: Emulator black-box boot / VPN service / crash test
         uses: reactivecircus/android-emulator-runner@v2
